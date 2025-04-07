@@ -78,7 +78,7 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
                 after_149 = f.split("149")[1]
 
         for i in range(0,150): 
-            act = MaxInstPower(before_149+str(i)+after_149)/e
+            act = MaxInstPower(os.path.join(before_149,str(i),after_149))/e
             outputs[q].append(act)
 
             ax.plot(x_coord, np.array(outputs[q]), label=f"{name}")
