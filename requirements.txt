@@ -1,0 +1,6 @@
+pandas
+matplotlib.pyplot
+numpy
+os
+scipy.optimize
+warnings
