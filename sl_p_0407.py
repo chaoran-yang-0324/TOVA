@@ -50,26 +50,38 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
 
     x_coord = np.linspace(0,149,num=150)
     q=0
+    excel_files = []
 
     fig, ax = plot.subplots(figsize=(11, 8))
 
-    for filename in os.listdir(folder_path): 
-        excel_files = [f for f in os.listdir(filename) if f.endswith(".xlsx") or f.endswith(".xls")]
+    # Loop through the contents of the folder
+    for name in os.listdir(folder_path):
+        full_path = os.path.join(folder_path, name)
+
+        # Only look inside folders (skip .zip files or __MACOSX)
+        if os.path.isdir(full_path):
+            for f in os.listdir(full_path):
+                if f.endswith(".xlsx") or f.endswith(".xls"):
+                    excel_files.append(os.path.join(full_path, f))
+
         if excel_files:
-            excel_path = pd.read_excel(os.path.join(filename, excel_files[0]), sheet_name=0, header=None)
+            excel_path = pd.read_excel(os.path.join(full_path, excel_files[0]), sheet_name=0, header=None)
             e=excel_path.iloc[6,1]*0.001 # mass(kg)
         else:
             print("No Excel files found in "+folder_path)
 
-        sample_file = [f for f in os.listdir(filename) if len(filename) >= 22 and filename[18:21] == "149"]
-        before_149 = sample_file.split("149")[0]
-        after_149 = sample_file.split("149")[1]
+        # sample_file = [f for f in os.listdir(filename) if len(filename) >= 22 and filename[18:21] == "149"]
+
+        for f in os.listdir(name):
+            if len(f) >= 22 and f[18:21] == "149":
+                before_149 = os.path.join(full_path, f.split("149")[0])
+                after_149 = f.split("149")[1]
 
         for i in range(0,150): 
-            act = MaxInstPower(folder_path+filename+before_149+str(i)+after_149)/e
+            act = MaxInstPower(before_149+str(i)+after_149)/e
             outputs[q].append(act)
 
-            ax.plot(x_coord, np.array(outputs[q]), label=f"{filename}")
+            ax.plot(x_coord, np.array(outputs[q]), label=f"{name}")
             ax.set_xlabel('Contraction Index')
             ax.set_ylabel('Normalized Power (W/kg)')
             ax.set_title('Peak Power')
