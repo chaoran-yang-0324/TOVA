@@ -49,11 +49,12 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
         outputs.append([])
 
     x_coord = np.linspace(0,149,num=150)
+    q=0
 
     fig, ax = plot.subplots(figsize=(11, 8))
 
-    for q, filename in enumerate(os.listdir(folder_path), start=0): 
-        excel_files = [f for f in os.listdir(filename) if (f.endswith(".xlsx") or f.endswith(".xls")) and "__MACOSX" not in f]
+    for filename in os.listdir(folder_path): 
+        excel_files = [f for f in os.listdir(filename) if f.endswith(".xlsx") or f.endswith(".xls")]
         if excel_files:
             excel_path = pd.read_excel(os.path.join(filename, excel_files[0]), sheet_name=0, header=None)
             e=excel_path.iloc[6,1]*0.001 # mass(kg)
@@ -74,6 +75,7 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
             ax.set_title('Peak Power')
             ax.legend()
             ax.grid()
+        q=q+1
     # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
 
     return fig
