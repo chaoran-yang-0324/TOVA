@@ -68,7 +68,7 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
                     excel_files.append(os.path.join(mouse_files, f))
 
         if excel_files:
-            excel_path = pd.read_excel(os.path.join(mouse_files, excel_files[0]), sheet_name=0, header=None)
+            excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
             e=excel_path.iloc[6,1]*0.001 # mass(kg)
         else:
             print("No Excel files found in "+mouse_files)
