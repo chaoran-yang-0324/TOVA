@@ -58,30 +58,31 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
 
     # Loop through the contents of the folder
     for name in os.listdir(folder_path):
-        excel_files = []
-        mouse_files = os.path.join(folder_path, name)
+        if os.path.isdir(name):
+            excel_files = []
+            mouse_files = os.path.join(folder_path, name)
 
-        # Only look inside folders (skip .zip files or __MACOSX)
-        if os.path.isdir(mouse_files):
+            # Only look inside folders (skip .zip files or __MACOSX)
+            if os.path.isdir(mouse_files):
+                for f in os.listdir(mouse_files):
+                    if f.lower().endswith(".xlsx") or f.lower().endswith(".xls"):
+                        excel_files.append(os.path.join(mouse_files, f))
+
+            if excel_files:
+                excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
+                e=excel_path.iloc[6,1]*0.001 # mass(kg)
+            else:
+                print("No Excel files found in "+mouse_files)
+
             for f in os.listdir(mouse_files):
-                if f.lower().endswith(".xlsx") or f.lower().endswith(".xls"):
-                    excel_files.append(os.path.join(mouse_files, f))
+                if not (f.lower().endswith(".xlsx") or f.lower().endswith(".xls")):
+                    ddf_files = os.path.join(mouse_files, f)
+                    act = MaxInstPower(ddf_files)/e
+                    outputs[q].append(act)
+                else: 
+                    print("boop")
 
-        if excel_files:
-            excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
-            e=excel_path.iloc[6,1]*0.001 # mass(kg)
-        else:
-            print("No Excel files found in "+mouse_files)
-
-        for f in os.listdir(mouse_files):
-            if not (f.lower().endswith(".xlsx") or f.lower().endswith(".xls")):
-                ddf_files = os.path.join(mouse_files, f)
-                act = MaxInstPower(ddf_files)/e
-                outputs[q].append(act)
-            else: 
-                print("boop")
-
-        q=q+1
+            q=q+1
     # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
 
     for index, result in enumerate(outputs):
