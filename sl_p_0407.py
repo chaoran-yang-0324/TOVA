@@ -125,11 +125,11 @@ The folder you upload should be in the format:
            |
             -> ...
        -> ...
+
+    Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information.
 """
 
 st.code(folder_structure, language='text')
-
-st.markdown("Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information.")
 
 if uploaded_zip:
     # Define the folder where we will save the uploaded file
@@ -172,7 +172,7 @@ end_cutoff = st.number_input("End Cutoff:", min_value=start_cutoff+1, value=215,
 baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, step=1)
 
 st.write(
-    "Generally, there's no need to adjust these parameters!"
+    "(Generally, there's no need to adjust these parameters!)"
 )
 
 if st.button("Run Analysis"):
