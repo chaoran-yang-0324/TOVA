@@ -130,7 +130,7 @@ if uploaded_zip:
             # if '__MACOSX' not in member:
                 # zip_ref.extract(member, unzip_folder)
 
-    unzip_folder = os.path.join(unzip_folder, uploaded_zip.name.split('.')[0])
+    # unzip_folder = os.path.join(unzip_folder, uploaded_zip.name.split('.')[0])
 
     st.write(f"Contents of {unzip_folder}:")
     st.write(os.listdir(unzip_folder))  # Display contents
