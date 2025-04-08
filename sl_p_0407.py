@@ -59,30 +59,32 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
     # Loop through the contents of the folder
     for name in os.listdir(folder_path):
         excel_files = []
-        full_path = os.path.join(folder_path, name)
+        mouse_files = os.path.join(folder_path, name)
 
         # Only look inside folders (skip .zip files or __MACOSX)
-        if os.path.isdir(full_path):
-            for f in os.listdir(full_path):
+        if os.path.isdir(mouse_files):
+            for f in os.listdir(mouse_files):
                 if f.endswith(".xlsx") or f.endswith(".xls"):
-                    excel_files.append(os.path.join(full_path, f))
+                    excel_files.append(os.path.join(mouse_files, f))
 
         if excel_files:
-            excel_path = pd.read_excel(os.path.join(full_path, excel_files[0]), sheet_name=0, header=None)
+            excel_path = pd.read_excel(os.path.join(mouse_files, excel_files[0]), sheet_name=0, header=None)
             e=excel_path.iloc[6,1]*0.001 # mass(kg)
         else:
-            print("No Excel files found in "+full_path)
+            print("No Excel files found in "+mouse_files)
 
         # sample_file = [f for f in os.listdir(filename) if len(filename) >= 22 and filename[18:21] == "149"]
 
-        for f in os.listdir(full_path):
+        for f in os.listdir(mouse_files):
             if len(f) >= 22 and f[18:21] == "149":
-                before_149 = os.path.join(full_path, f.split("149")[0])
+                before_149 = os.path.join(mouse_files, f.split("149")[0])
                 after_149 = f.split("149")[1]
 
                 for i in range(0,150): 
                     act = MaxInstPower(before_149+str(i)+after_149)/e
                     outputs[q].append(act)
+            else:
+                print("No 149 file found in "+mouse_files)
 
         q=q+1
     # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
