@@ -12,6 +12,8 @@ import zipfile
 
 import streamlit as st
 
+# 0408 version. If needed, 0407 is on Lab Archives.
+
 
 # In[8]:
 
@@ -56,6 +58,7 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
 
     # Loop through the contents of the folder
     for name in os.listdir(folder_path):
+        excel_files = []
         full_path = os.path.join(folder_path, name)
 
         # Only look inside folders (skip .zip files or __MACOSX)
@@ -81,14 +84,16 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
                     act = MaxInstPower(before_149+str(i)+after_149)/e
                     outputs[q].append(act)
 
-                    ax.plot(x_coord, np.array(outputs[q]), label=f"{name}")
-                    ax.set_xlabel('Contraction Index')
-                    ax.set_ylabel('Normalized Power (W/kg)')
-                    ax.set_title('Peak Power')
-                    ax.legend()
-                    ax.grid()
         q=q+1
     # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
+
+    for index, result in enumerate(outputs):
+        ax.plot(x_coord, np.array(result), label=f"Animal {index}")
+    ax.set_xlabel('Contraction Index')
+    ax.set_ylabel('Normalized Power (W/kg)')
+    ax.set_title('Peak Power')
+    ax.legend()
+    ax.grid()
 
     return fig
 
