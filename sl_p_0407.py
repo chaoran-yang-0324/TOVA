@@ -109,6 +109,27 @@ st.title("Peak Power Analysis")
 
 uploaded_zip = st.file_uploader("Upload a .zip file", type="zip")
 
+st.markdown("""
+The folder you upload should be in the format: 
+    name_of_folder.zip
+      |
+       -> M2034
+           |
+            -> ___.ddf
+            -> ...
+            -> ___.xlsx
+       -> M2035
+           |
+            -> ...
+       -> M2036
+           |
+            -> ...
+       -> ...
+
+Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information.
+""")
+
+'''''
 st.write(
     "The folder you upload should be in the format: "
     "name_of_folder.zip"
@@ -128,6 +149,7 @@ st.write(
     " "
     "Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information."
 )
+'''''
 
 if uploaded_zip:
     # Define the folder where we will save the uploaded file
@@ -165,13 +187,13 @@ if uploaded_zip:
     # for filename in os.listdir(unzip_folder):
         # st.write(filename)
 
-st.write(
-    "Generally, there's no need to adjust the following parameters!"
-)
-
 start_cutoff = st.number_input("Start Cutoff:", min_value=0, value=50, step=1)
 end_cutoff = st.number_input("End Cutoff:", min_value=start_cutoff+1, value=215, step=1)
 baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, step=1)
+
+st.write(
+    "Generally, there's no need to adjust these parameters!"
+)
 
 if st.button("Run Analysis"):
     fig = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
