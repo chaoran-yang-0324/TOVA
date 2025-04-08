@@ -19,7 +19,7 @@ import streamlit as st
 # In[8]:
 
 
-def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, baseline_cutoff=45):
+def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cutoff=45):
 
     def MaxInstPower(file_path):
         df = pd.read_csv(file_path, delimiter='\t',skiprows=32, usecols=[0, 1, 2])
@@ -51,8 +51,10 @@ def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, bas
 
     # sorted_files = sorted(files, key=natural_sort_key)
 
+    num_folders = len(os.listdir(folder_path))
+
     outputs = []
-    for _ in range(num_mice):
+    for _ in range(num_folders):
         outputs.append([])
 
     x_coord = np.linspace(0,149,num=150)
@@ -94,7 +96,7 @@ def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, bas
     # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
 
     for index, result in enumerate(outputs):
-        ax.plot(x_coord, np.array(result), label=f"Animal {index}")
+        ax.plot(x_coord, np.array(result), label=f"Animal {index+1}")
     ax.set_xlabel('Contraction Index')
     ax.set_ylabel('Normalized Power (W/kg)')
     ax.set_title('Peak Power')
@@ -106,6 +108,26 @@ def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, bas
 st.title("Peak Power Analysis")
 
 uploaded_zip = st.file_uploader("Upload a .zip file", type="zip")
+
+st.write(
+    "The folder you upload should be in the format: "
+    "name_of_folder.zip"
+    "  |"
+    "   -> M2034"
+    "       |"
+    "        -> ___.ddf"
+    "        -> ..."
+    "        -> ___.xlsx"
+    "   -> M2035"
+    "       |"
+    "        -> ..."
+    "   -> M2036"
+    "       |"
+    "        -> ..."
+    "   -> ..."
+    " "
+    "Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information."
+)
 
 if uploaded_zip:
     # Define the folder where we will save the uploaded file
@@ -143,12 +165,15 @@ if uploaded_zip:
     # for filename in os.listdir(unzip_folder):
         # st.write(filename)
 
-num_mice = st.number_input("Total Number of Animals:", min_value=0, step=1)
+st.write(
+    "Generally, there's no need to adjust the following parameters!"
+)
+
 start_cutoff = st.number_input("Start Cutoff:", min_value=0, value=50, step=1)
 end_cutoff = st.number_input("End Cutoff:", min_value=start_cutoff+1, value=215, step=1)
 baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, step=1)
 
 if st.button("Run Analysis"):
-    fig = run_MaxInstPower(unzip_folder,num_mice,start_cutoff,end_cutoff,baseline_cutoff)
+    fig = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
     st.pyplot(fig)
 
