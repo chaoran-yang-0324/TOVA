@@ -126,7 +126,8 @@ The folder you upload should be in the format:
             -> ...
        -> ...
 
-    Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information.
+Every 'Mouse ID' folder should consist of '.ddf' contraction files 
+    AND an excel datasheet with tissue information.
 """
 
 st.code(folder_structure, language='text')
