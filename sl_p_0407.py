@@ -58,7 +58,7 @@ def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, bas
 
     # Loop through the contents of the folder
     for name in os.listdir(folder_path):
-        if os.path.isdir(name):
+        if name != ".DS_Store":
             print("processing "+name+" ...")
             excel_files = []
             mouse_files = os.path.join(folder_path, name)
@@ -81,8 +81,7 @@ def run_MaxInstPower(folder_path, num_mice, start_cutoff=50, end_cutoff=215, bas
                     act = MaxInstPower(ddf_files)/e
                     outputs[q].append(act)
                 else: 
-                    print("boop")
-
+                    print("boop")               
             q=q+1
         else: 
             print("skipped "+name)
