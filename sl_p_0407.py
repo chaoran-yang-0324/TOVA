@@ -71,7 +71,7 @@ def run_MaxInstPower(folder_path,start_cutoff=50, end_cutoff=215, baseline_cutof
             excel_path = pd.read_excel(os.path.join(full_path, excel_files[0]), sheet_name=0, header=None)
             e=excel_path.iloc[6,1]*0.001 # mass(kg)
         else:
-            print("No Excel files found in "+folder_path)
+            print("No Excel files found in "+full_path)
 
         # sample_file = [f for f in os.listdir(filename) if len(filename) >= 22 and filename[18:21] == "149"]
 
