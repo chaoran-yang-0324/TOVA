@@ -127,7 +127,7 @@ The folder you upload should be in the format:
        -> ...
 """
 
-st.markdown(folder_structure)
+st.code(folder_structure, language='text')
 
 st.markdown("Every 'Mouse ID' folder should consist of '.ddf' contraction files AND an excel datasheet with tissue information.")
 
