@@ -172,9 +172,7 @@ start_cutoff = st.number_input("Start Cutoff:", min_value=0, value=50, step=1)
 end_cutoff = st.number_input("End Cutoff:", min_value=start_cutoff+1, value=215, step=1)
 baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, step=1)
 
-st.write(
-    "(Generally, there's no need to adjust these parameters!)"
-)
+parameter_instructions = """(Generally, there's no need to adjust these parameters!)"""
 
 if st.button("Run Analysis"):
     fig = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
