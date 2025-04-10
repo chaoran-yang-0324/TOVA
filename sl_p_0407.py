@@ -13,7 +13,7 @@ import re
 
 import streamlit as st
 
-# 0408 version. If needed, 0407 is on Lab Archives.
+# 0410 version. 0408 is gone. 0407 is on Lab Archives.
 
 
 # In[8]:
@@ -80,8 +80,6 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
                         excel_files.append(os.path.join(mouse_files, f))
                         excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
                         e=excel_path.iloc[6,1]*0.001 # mass(kg)
-                    else:
-                        print("No Excel files found in "+mouse_files)
 
             sorted_files = sorted(os.listdir(mouse_files), key=natural_sort_key)
             for f in sorted_files:
@@ -173,7 +171,9 @@ start_cutoff = st.number_input("Start Cutoff:", min_value=0, value=50, step=1)
 end_cutoff = st.number_input("End Cutoff:", min_value=start_cutoff+1, value=215, step=1)
 baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, step=1)
 
-parameter_instructions = """(Generally, there's no need to adjust these parameters!)"""
+parameter_instructions = """
+(Generally, there's no need to adjust these parameters!)
+"""
 
 if st.button("Run Analysis"):
     fig = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
