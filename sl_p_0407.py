@@ -63,8 +63,10 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
 
     fig, ax = plot.subplots(figsize=(11, 8))
 
+    sorted_names = sorted(os.listdir(folder_path), key=natural_sort_key)
+
     # Loop through the contents of the folder
-    for name in os.listdir(folder_path):
+    for name in sorted_names:
         if name != ".DS_Store":
             print("processing "+name+" ...")
             excel_files = []
@@ -74,22 +76,21 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
             if os.path.isdir(mouse_files):
                 for f in os.listdir(mouse_files):
                     if f.lower().endswith(".xlsx") or f.lower().endswith(".xls"):
+                        print("Excel file "+f+" found in "+mouse_files)
                         excel_files.append(os.path.join(mouse_files, f))
-
-            if excel_files:
-                excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
-                e=excel_path.iloc[6,1]*0.001 # mass(kg)
-            else:
-                print("No Excel files found in "+mouse_files)
+                        excel_path = pd.read_excel(excel_files[0], sheet_name=0, header=None)
+                        e=excel_path.iloc[6,1]*0.001 # mass(kg)
+                    else:
+                        print("No Excel files found in "+mouse_files)
 
             sorted_files = sorted(os.listdir(mouse_files), key=natural_sort_key)
             for f in sorted_files:
-                if not (f.lower().endswith(".xlsx") or f.lower().endswith(".xls")):
+                if f.lower().endswith(".xlsx") or f.lower().endswith(".xls"):
+                    print("skipped Excel file "+f+" in "+sorted_files)
+                else: 
                     ddf_files = os.path.join(mouse_files, f)
                     act = MaxInstPower(ddf_files)/e
-                    outputs[q].append(act)
-                else: 
-                    print("boop")               
+                    outputs[q].append(act)             
             q=q+1
         else: 
             print("skipped "+name)
