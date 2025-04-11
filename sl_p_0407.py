@@ -106,9 +106,6 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
 
 st.title("Peak Power Analysis")
 
-if "data_ready" not in st.session_state:
-    st.session_state.data_ready = False
-
 uploaded_zip = st.file_uploader("Upload a .zip file", type="zip")
 
 folder_structure = """
@@ -186,19 +183,13 @@ if st.button("Run Analysis"):
     st.write("Graphing...")
     st.pyplot(fig)
 
-    st.session_state.data_ready = True
-
 now = datetime.now()
 timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
+csv_name=f"peak_power_{timestamp}.csv"
 
-csv_name=f"peak_power_analysis_download_{timestamp}.csv"
-
-if st.session_state.data_ready:
-    csv = csv_output.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="Download CSV",
+csv = csv_output.to_csv(index=False).encode('utf-8')
+st.download_button(label="Download CSV",
         data=csv,
         file_name=csv_name,
-        mime='text/csv',
-    )
+        mime='text/csv')
 
