@@ -10,6 +10,7 @@ import numpy as np
 import os
 import zipfile
 import re
+from datetime import datetime
 
 import streamlit as st
 
@@ -92,7 +93,6 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
             q=q+1
         else: 
             print("skipped "+name)
-    # np.savetxt("name.csv", outputs, delimiter=",", fmt='%s')
 
     for index, result in enumerate(outputs):
         ax.plot(x_coord, np.array(result), label=f"Animal {index+1}")
@@ -102,9 +102,12 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
     ax.legend()
     ax.grid()
 
-    return fig
+    return fig,outputs
 
 st.title("Peak Power Analysis")
+
+if "data_ready" not in st.session_state:
+    st.session_state.data_ready = False
 
 uploaded_zip = st.file_uploader("Upload a .zip file", type="zip")
 
@@ -178,6 +181,24 @@ parameter_instructions = """
 st.code(parameter_instructions, language='text')
 
 if st.button("Run Analysis"):
-    fig = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
+    st.write("Calculating...")
+    fig,csv_output = run_MaxInstPower(unzip_folder,start_cutoff,end_cutoff,baseline_cutoff)
+    st.write("Graphing...")
     st.pyplot(fig)
+
+    st.session_state.data_ready = True
+
+now = datetime.now()
+timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
+
+csv_name=f"peak_power_analysis_download_{timestamp}.csv"
+
+if st.session_state.data_ready:
+    csv = csv_output.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name=csv_name,
+        mime='text/csv',
+    )
 
