@@ -10,7 +10,7 @@ import numpy as np
 import os
 import zipfile
 import re
-from datetime import datetime
+# from datetime import datetime
 
 import streamlit as st
 
@@ -183,9 +183,10 @@ if st.button("Run Analysis"):
     st.write("Graphing...")
     st.pyplot(fig)
 
-now = datetime.now()
-timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
-csv_name=f"peak_power_{timestamp}.csv"
+# now = datetime.now()
+# timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
+# csv_name=f"peak_power_{timestamp}.csv"
+csv_name=f"peak_power.csv"
 
 csv = csv_output.to_csv(index=False).encode('utf-8')
 st.download_button(label="Download CSV",
