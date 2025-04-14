@@ -14,8 +14,6 @@ import re
 
 import streamlit as st
 
-# 0410 version. 0408 is gone. 0407 is on Lab Archives.
-
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
@@ -34,6 +32,9 @@ def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(230,210), bas
         while clicker<2:
             end_cutoff = np.array(end_cutoff_set)[int(clicker)]
             jump_threshold = np.array(jump_threshold_set)[int(clicker)]
+
+            # if jump_threshold==0.004: 
+                # print("jump_threshold=0.004") 
 
             x = data_array[:,0][start_cutoff:end_cutoff]*0.001 # time, currently in seconds
             y = data_array[:,1][start_cutoff:end_cutoff]*0.5 # position, currently in millimeters
@@ -59,14 +60,20 @@ def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(230,210), bas
             if clicker==0 and len(significant_jumps)>0: 
                 # print("first trial succeeded")
                 clicker = clicker+ 2 # move on
-            if clicker==0 and len(significant_jumps)==0: 
-                print("first trial failed for "+file_path)
+            elif clicker==0 and len(significant_jumps)==0: 
+                # print("first trial failed for "+file_path)
+                # print(zero_diffs)
+                # print(np.where(zero_diffs > jump_threshold))
                 clicker = clicker+ 1 # try again
-            if clicker==1 and len(significant_jumps)>0: 
-                print("second trial succeeded for "+file_path)
+            elif clicker==1 and len(significant_jumps)>0: 
+                # print("second trial succeeded for "+file_path)
                 clicker = clicker+ 1 # move on
-            if clicker==1 and len(significant_jumps)==0: 
+            elif clicker==1 and len(significant_jumps)==0: 
                 print("second trial failed for "+file_path)
+                # print(zero_diffs)
+                # print(np.where(zero_diffs > jump_threshold))
+                # print(jump_threshold) # 0.025
+                # print(clicker)
                 clicker = clicker+ 1 
 
         in_start = x_mid[zero_crossings][np.min(significant_jumps)]
