@@ -16,6 +16,9 @@ import streamlit as st
 
 # 0410 version. 0408 is gone. 0407 is on Lab Archives.
 
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+
 
 # In[8]:
 
@@ -45,12 +48,6 @@ def run_MaxInstPower(folder_path, start_cutoff=50, end_cutoff=215, baseline_cuto
         max_power = np.max(inst_p)
 
         return (max_power)
-
-    # Custom sort function to sort files naturally (alphabet first, then numerically)
-    def natural_sort_key(s):
-        return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
-
-    # sorted_files = sorted(files, key=natural_sort_key)
 
     num_folders = len(os.listdir(folder_path))-1
 
@@ -161,7 +158,8 @@ if uploaded_zip:
     unzip_folder = os.path.join(unzip_folder, uploaded_zip.name.split('.')[0])
 
     st.write(f"Contents of {unzip_folder}:")
-    st.write(os.listdir(unzip_folder))  # Display contents
+    sorted_folder_names = sorted(os.listdir(unzip_folder), key=natural_sort_key)
+    st.write(sorted_folder_names)  # Display contents
 
     # You can now loop through the contents of the folder
     # for filename in os.listdir(unzip_folder):
@@ -186,11 +184,13 @@ if st.button("Run Analysis"):
 # now = datetime.now()
 # timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
 # csv_name=f"peak_power_{timestamp}.csv"
-csv_name=f"peak_power.csv"
+    csv_name=f"peak_power.csv"
 
-csv = csv_output.to_csv(index=False).encode('utf-8')
-st.download_button(label="Download CSV",
-        data=csv,
-        file_name=csv_name,
-        mime='text/csv')
+    df = pd.DataFrame(csv_output)
+    csv = df.to_csv(index=False).encode('utf-8')    
+    st.download_button(label="Download CSV",
+            data=csv,
+            file_name=csv_name,
+            mime='text/csv')
+    st.pyplot(fig)
 
