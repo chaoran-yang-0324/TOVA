@@ -184,7 +184,6 @@ if st.button("Run Analysis"):
     now = datetime.now()
     timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
     csv_name=f"peak_power_{timestamp}.csv"
-    csv_name=f"peak_power.csv"
 
     df = pd.DataFrame(csv_output)
     csv = df.to_csv(index=False).encode('utf-8')    
