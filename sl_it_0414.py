@@ -23,33 +23,51 @@ def natural_sort_key(s):
 # In[8]:
 
 
-def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff=215, baseline_cutoff=45, jump_threshold = 0.025):
+def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(240,210), baseline_cutoff=45, jump_threshold = 0.025):
 
-    def IsotonicWork(file_path):
-        df = pd.read_csv(file_path, delimiter='\t',skiprows=32, usecols=[0, 1, 2])
+    def IsotonicWork(file_path,end_cutoff_set,jump_threshold_set):
+        df = pd.read_csv(file_path, delimiter='\t',skiprows=31, usecols=[0, 1, 2])
         data_array = df.to_numpy()
 
-        # truncate these based on "int_sg":
-        x = data_array[:,0][start_cutoff:end_cutoff]*0.001 # time, currently in seconds
-        y = data_array[:,1][start_cutoff:end_cutoff]*0.5 # position, currently in millimeters
-        z = data_array[:,2][start_cutoff:end_cutoff]*99.06 # force, currently in mN
+        clicker = 0
 
-        baseline_start_y = y[0:baseline_cutoff] # edit this based on "int_sg"
-        mean_start_y = np.mean(baseline_start_y)
-        y = -data_array[:,1][start_cutoff:end_cutoff]*0.5 + mean_start_y
+        while clicker<2:
+            end_cutoff = np.array(end_cutoff_set)[int(clicker)]
+            jump_threshold = np.array(jump_threshold_set)[int(clicker)]
 
-        baseline_start_z = z[0:baseline_cutoff] # edit this based on "int_sg"
-        mean_start_z = np.mean(baseline_start_z)
-        z = data_array[:,2][start_cutoff:end_cutoff]*99.06 - mean_start_z
+            x = data_array[:,0][start_cutoff:end_cutoff]*0.001 # time, currently in seconds
+            y = data_array[:,1][start_cutoff:end_cutoff]*0.5 # position, currently in millimeters
+            z = data_array[:,2][start_cutoff:end_cutoff]*99.06 # force, currently in mN
 
-        deriv = np.gradient(y,x)
-        inst_p = 10**(-6)* z * deriv # currently in Watts
+            baseline_start_y = y[0:baseline_cutoff]
+            mean_start_y = np.mean(baseline_start_y)
+            y = -data_array[:,1][start_cutoff:end_cutoff]*0.5 + mean_start_y
 
-        zero_crossings = np.where(np.diff(np.sign(inst_p)) != 0)[0]
-        x_mid = (x[:-1] + x[1:]) / 2
+            baseline_start_z = z[0:baseline_cutoff]
+            mean_start_z = np.mean(baseline_start_z)
+            z = data_array[:,2][start_cutoff:end_cutoff]*99.06 - mean_start_z
 
-        zero_diffs = np.diff(x_mid[zero_crossings])
-        significant_jumps = np.where(zero_diffs > jump_threshold)[0]
+            deriv = np.gradient(y,x)
+            inst_p = 10**(-6)* z * deriv # currently in Watts
+
+            zero_crossings = np.where(np.diff(np.sign(inst_p)) != 0)[0]
+            x_mid = (x[:-1] + x[1:]) / 2
+
+            zero_diffs = np.diff(x_mid[zero_crossings])
+            significant_jumps = np.where(zero_diffs > jump_threshold)[0]
+
+            if clicker==0 and len(significant_jumps)>0: 
+                # print("first trial succeeded")
+                clicker = clicker+ 2 # move on
+            if clicker==0 and len(significant_jumps)==0: 
+                # print("first trial failed")
+                clicker = clicker+ 1 # try again
+            if clicker==1 and len(significant_jumps)>0: 
+                # print("second trial succeeded")
+                clicker = clicker+ 1 # move on
+            if clicker==1 and len(significant_jumps)==0: 
+                print("second trial failed for "+file_path)
+                clicker = clicker+ 1 
 
         in_start = x_mid[zero_crossings][np.min(significant_jumps)]
         in_end = x_mid[zero_crossings][np.max(significant_jumps) + 1]
