@@ -23,7 +23,7 @@ def natural_sort_key(s):
 # In[8]:
 
 
-def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(240,210), baseline_cutoff=45, jump_threshold_set=(0.025,0.004)):
+def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(230,210), baseline_cutoff=45, jump_threshold_set=(0.025,0.004)):
 
     def IsotonicWork(file_path,end_cutoff_set,jump_threshold_set):
         df = pd.read_csv(file_path, delimiter='\t',skiprows=31, usecols=[0, 1, 2])
@@ -199,7 +199,7 @@ start_cutoff = st.number_input("Start Cutoff:", min_value=0, value=50, step=1)
 
 col11, col12 = st.columns(2)
 with col11:
-    end_cutoff_11 = st.number_input("End Cutoff 1", min_value=0, value=240, step=1)
+    end_cutoff_11 = st.number_input("End Cutoff 1", min_value=0, value=230, step=1)
 with col12:
     end_cutoff_12 = st.number_input("End Cutoff 2", min_value=0, value=210, step=1)
 
