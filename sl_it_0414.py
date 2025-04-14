@@ -60,10 +60,10 @@ def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(230,210), bas
                 # print("first trial succeeded")
                 clicker = clicker+ 2 # move on
             if clicker==0 and len(significant_jumps)==0: 
-                # print("first trial failed")
+                print("first trial failed for "+file_path)
                 clicker = clicker+ 1 # try again
             if clicker==1 and len(significant_jumps)>0: 
-                # print("second trial succeeded")
+                print("second trial succeeded for "+file_path)
                 clicker = clicker+ 1 # move on
             if clicker==1 and len(significant_jumps)==0: 
                 print("second trial failed for "+file_path)
@@ -73,7 +73,7 @@ def run_IsotonicWork(folder_path, start_cutoff=50, end_cutoff_set=(230,210), bas
         in_end = x_mid[zero_crossings][np.max(significant_jumps) + 1]
 
         index_start = int(1000*in_start-start_cutoff)
-        index_end = int(1000*in_end-start_cutoff)
+        index_end = int(1000*in_end-start_cutoff+1)
 
         total_work = np.trapezoid(inst_p[index_start:index_end],x[index_start:index_end])
 
