@@ -209,9 +209,9 @@ baseline_cutoff = st.number_input("Baseline Cutoff:", min_value=0, value=45, ste
 
 col21, col22 = st.columns(2)
 with col21:
-    jump_threshold_21 = st.number_input("Jump Threshold 1", min_value=0.0, value=0.025, step=0.001)
+    jump_threshold_21 = st.number_input("Jump Threshold 1", min_value=0.0, value=0.025, step=0.001, format="%.3f")
 with col22:
-    jump_threshold_22 = st.number_input("Jump Threshold 2", min_value=0.0, value=0.004, step=0.001)
+    jump_threshold_22 = st.number_input("Jump Threshold 2", min_value=0.0, value=0.004, step=0.001, format="%.3f")
 
 jump_threshold_set = (jump_threshold_21, jump_threshold_22)
 
