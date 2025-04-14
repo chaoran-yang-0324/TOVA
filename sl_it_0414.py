@@ -223,7 +223,7 @@ st.code(parameter_instructions, language='text')
 
 if st.button("Run Analysis"):
     st.write("Calculating...")
-    fig,csv_output = run_IsotonicWork(unzip_folder,start_cutoff,end_cutoff_set,baseline_cutoff,jump_threshold)
+    fig,csv_output = run_IsotonicWork(unzip_folder,start_cutoff,end_cutoff_set,baseline_cutoff,jump_threshold_set)
     st.write("Graphing...")
     st.pyplot(fig)
 
