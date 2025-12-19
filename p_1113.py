@@ -296,25 +296,15 @@ def run_max_inst_power(
     mass_kg: float,
     threshold_std: float = 5.0,
     min_duration_ms: float = 20.0
-) -> Tuple[plt.Figure, List[List[float]]]:
+) -> List[List[float]]:
     """
-    Process all animal folders under `folder_path` and compute normalized
+    Process one animal folder under `folder_path` and compute normalized
     peak instantaneous power (W/kg) for each contraction.
-
-    Assumes structure:
-      folder_path/
-        Animal1/
-          <DMC data files>   (e.g. .txt)
-        Animal2/
-          <DMC data files>
-        ...
-
-    The same mass_kg is used for all animals.
 
     Parameters
     ----------
     folder_path : str
-        Root directory containing one subfolder per animal.
+        Root directory of the one animal folder.
     mass_kg : float
         Animal mass in kilograms used to normalize peak power.
     threshold_std : float
@@ -324,63 +314,30 @@ def run_max_inst_power(
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-        Plot of normalized peak power vs. contraction index per animal.
     outputs : list[list[float]]
         Normalized peak power values (W/kg) for each contraction and animal.
     """
-    outputs: List[List[float]] = []
-    animal_labels: List[str] = []
+    animal_results: List[float] = []
 
-    items = sorted(os.listdir(folder_path), key=natural_sort_key)
+    for f in sorted(os.listdir(folder_path), key=natural_sort_key):
+        data_file = os.path.join(folder_path, f)
 
-    for name in items:
-        animal_dir = os.path.join(folder_path, name)
-
-        if not os.path.isdir(animal_dir) or name.startswith("."):
-            print(f"Skipped {name}")
+        # Skip directories and hidden files
+        if os.path.isdir(data_file) or f.startswith("."):
+            print(f"  Skipped {f} in {folder_path}")
             continue
 
-        print(f"Processing {name} ...")
+        print(f"Processing {f} ...")
 
-        animal_results: List[float] = []
+        peak_power_W = max_instantaneous_power_from_file(
+            data_file,
+            threshold_std=threshold_std,
+            min_duration_ms=min_duration_ms,
+        )
+        normalized_power = peak_power_W / mass_kg  # W/kg
+        animal_results.append(normalized_power)
 
-        for f in sorted(os.listdir(animal_dir), key=natural_sort_key):
-            data_file = os.path.join(animal_dir, f)
-
-            # Skip directories and hidden files
-            if os.path.isdir(data_file) or f.startswith("."):
-                print(f"  Skipped {f} in {animal_dir}")
-                continue
-
-            peak_power_W = max_instantaneous_power_from_file(
-                data_file,
-                threshold_std=threshold_std,
-                min_duration_ms=min_duration_ms,
-            )
-            normalized_power = peak_power_W / mass_kg  # W/kg
-            animal_results.append(normalized_power)
-
-        if not animal_results:
-            print(f"  No data files found for {name}.")
-            continue
-
-        outputs.append(animal_results)
-        animal_labels.append(name)
-
-    fig, ax = plt.subplots(figsize=(11, 8))
-
-    for idx, result in enumerate(outputs):
-        x_coord = np.arange(len(result))
-        ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
-
-    ax.set_xlabel("Contraction Index")
-    ax.set_ylabel("Normalized Power (W/kg)")
-    ax.set_title("Peak Power")
-    ax.legend()
-    ax.grid(True)
-
-    return fig, outputs
+    return animal_results
 
 st.title("Peak Power Analysis")
 
@@ -390,14 +347,14 @@ folder_structure = """
 The folder you upload should be in the format: 
     name_of_folder.zip
       |
-       -> curve_1
+       -> animal_1
            |
             -> ___.ddf
             -> ...
-       -> curve_2
+       -> animal_2
            |
             -> ...
-       -> curve_3
+       -> animal_3
            |
             -> ...
        -> ...
@@ -438,16 +395,32 @@ if uploaded_zip:
     sorted_folder_names = sorted(os.listdir(unzip_folder), key=natural_sort_key)
     st.write(sorted_folder_names)  # Display contents
 
-    # You can now loop through the contents of the folder
-    # for filename in os.listdir(unzip_folder):
-        # st.write(filename)
+    mass_kg = []
 
-mass_kg = st.number_input("Mass (kg):", min_value=0.0, value=1.0, step=0.001)
+    # You can now loop through the contents of the folder
+    for i, filename in os.listdir(unzip_folder):
+        mass_kg[i] = st.number_input("Mass (kg):", min_value=0.0, value=1.0, step=0.001) 
+        # check if mass is actually in kg
 
 if st.button("Run Analysis"):
     st.write("Calculating...")
-    fig, csv_output = run_max_inst_power("path/to/root_folder", mass_kg=mass_kg)
+    csv_output = []
+    for i, filename in enumerate(os.listdir(unzip_folder)): 
+        csv_output[i] = run_max_inst_power(filename, mass_kg=mass_kg[i])
     st.write("Graphing...")
+
+    fig, ax = plt.subplots(figsize=(11, 8))
+
+    for idx, result in enumerate(csv_output):
+        x_coord = np.arange(len(result))
+        ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
+
+    ax.set_xlabel("Contraction Index")
+    ax.set_ylabel("Normalized Power (W/kg)")
+    ax.set_title("Peak Power")
+    ax.legend()
+    ax.grid(True)
+
     st.pyplot(fig)
 
     now = datetime.now()
@@ -461,3 +434,5 @@ if st.button("Run Analysis"):
             file_name=csv_name,
             mime='text/csv')
 
+# add the option to save mass data
+# add the option to upload mass data (from previous generation)
