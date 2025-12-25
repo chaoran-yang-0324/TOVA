@@ -395,18 +395,19 @@ if uploaded_zip:
     sorted_folder_names = sorted(os.listdir(unzip_folder), key=natural_sort_key)
     st.write(sorted_folder_names)  # Display contents
 
-    mass_kg: List[List[float]] = []
+    mass_kg: List[float] = []
 
     for i, filename in enumerate(os.listdir(unzip_folder)):
-        print(i)
-        mass_kg[i] = st.number_input("Mass (kg):", min_value=0.0, value=1.0, step=0.001) 
+        value = st.number_input(f"{i} Mass (kg):", min_value=0.0, value=1.0, step=0.001) 
+        mass_kg.append(value)
         # check if mass is actually in kg
 
 if st.button("Run Analysis"):
     st.write("Calculating...")
     csv_output = []
     for i, filename in enumerate(os.listdir(unzip_folder)): 
-        csv_output[i] = run_max_inst_power(filename, mass_kg=mass_kg[i])
+        value = run_max_inst_power(filename, mass_kg=mass_kg[i])
+        csv_output.append(value)
     st.write("Graphing...")
 
     fig, ax = plt.subplots(figsize=(11, 8))
