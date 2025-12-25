@@ -409,7 +409,8 @@ if st.button("Run Analysis"):
     st.write("Calculating...")
     csv_output = []
     for i, filename in enumerate(os.listdir(unzip_folder)): 
-        value = run_max_inst_power(filename, mass_kg=mass_g[i]*0.001)
+        run_path = os.path.join(unzip_folder,filename)
+        value = run_max_inst_power(run_path, mass_kg=mass_g[i]*0.001)
         csv_output.append(value)
     st.write("Graphing...")
 
