@@ -182,7 +182,7 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     sample_indices = np.arange(num_samples, dtype=float)
     time_s = sample_indices / sample_freq_hz
 
-    baseline_region = force_mN[:initial_baseline_end]
+    baseline_region = force_mN[:int(initial_baseline_end)]
     baseline_mean = float(np.mean(baseline_region))
     baseline_std = float(np.std(baseline_region))
 
