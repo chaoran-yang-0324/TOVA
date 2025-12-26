@@ -103,7 +103,7 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
             initial_baseline_end = None
             for j in range(len(prot_df)):
                 if str(prot_df.iloc[j, 1]).strip() == "Stimulus-Tetanus":
-                    initial_baseline_end = prot_df.iloc[j, 0]*sample_freq_hz
+                    initial_baseline_end = float(prot_df.iloc[j, 0])*sample_freq_hz
                     print("(cy) initial baseline end")
                     print(initial_baseline_end)
                     break
