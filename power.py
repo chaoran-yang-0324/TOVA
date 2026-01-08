@@ -490,6 +490,7 @@ if st.session_state.analysis_done:
 
     if mode == "Random Sample":
         if len(val_files) == 0:
+            print(val_files)
             st.warning("No files found in validation folder.")
         else:
             n_samples = max(1, int(0.05 * len(val_files)))
