@@ -351,14 +351,31 @@ def val_max_inst_power(file_path: str,
     # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
     inst_power_W = 1e-6 * force_seg * velocity_mm_s
 
-    fig, ax = plt.subplots(figsize=(11, 8))
-    ax.plot(time_seg, inst_power_W)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Normalized Power (W/kg)")
-    ax.set_title(f"{file_path} (index {i})")
-    ax.grid(True)
+    fig_l, ax_l = plt.subplots(figsize=(11, 8))
+    ax_l.plot(time_seg, length_seg)
+    ax_l.set_xlabel("Time (s)")
+    ax_l.set_ylabel("Length (mm))")
+    ax_l.legend()
+    ax_l.set_title(f"{file_path} (index {i}) Length")
+    ax_l.grid(True)
 
-    return fig
+    fig_f, ax_f = plt.subplots(figsize=(11, 8))
+    ax_f.plot(time_seg, force_seg)
+    ax_f.set_xlabel("Time (s)")
+    ax_f.set_ylabel("Force (mN)")
+    ax_f.legend()
+    ax_f.set_title(f"{file_path} (index {i}) Force")
+    ax_f.grid(True)
+
+    fig_p, ax_p = plt.subplots(figsize=(11, 8))
+    ax_p.plot(time_seg, inst_power_W)
+    ax_p.set_xlabel("Time (s)")
+    ax_p.set_ylabel("Power (W)")
+    ax_p.legend()
+    ax_p.set_title(f"{file_path} (index {i}) Power")
+    ax_p.grid(True)
+
+    return fig_l, fig_f, fig_p
 
 st.title("Peak Power Analysis")
 
@@ -523,9 +540,10 @@ if st.session_state.analysis_done:
                     )
                     for i in random_indices:
                         val_path = open_animal_folder[i]
-                        fig = val_max_inst_power(val_path, i)
-                        st.pyplot(fig)
-                        st.caption(f"{os.path.basename(val_path)} (index {i})")
+                        fig_l, fig_f, fig_p = val_max_inst_power(val_path, i)
+                        st.pyplot(fig_l)
+                        st.pyplot(fig_f)
+                        st.pyplot(fig_p)
 
             else:  # Specific Inspection
                 start = st.number_input(
@@ -549,7 +567,7 @@ if st.session_state.analysis_done:
                     if st.button("Run Specific Inspection"):
                         for i in range(int(start), int(end) + 1):
                             val_path = open_animal_folder[i]
-                            fig = val_max_inst_power(val_path, i)
-                            st.pyplot(fig)
-                            st.caption(f"{os.path.basename(val_path)} (index {i})")
-
+                            fig_l, fig_f, fig_p = val_max_inst_power(val_path, i)
+                            st.pyplot(fig_l)
+                            st.pyplot(fig_f)
+                            st.pyplot(fig_p)
