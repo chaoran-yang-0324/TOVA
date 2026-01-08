@@ -426,42 +426,48 @@ if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
 if "csv_output" not in st.session_state:
     st.session_state.csv_output = None
-if "val_files" not in st.session_state:
-    st.session_state.val_files = None
+if "animal_folders" not in st.session_state:
+    st.session_state.animal_folders = None
 if "csv_name" not in st.session_state:
     st.session_state.csv_name = None
+
+def list_subfolders(parent_dir: str):
+    return sorted(
+        [os.path.join(parent_dir, d) for d in os.listdir(parent_dir)
+         if os.path.isdir(os.path.join(parent_dir, d))],
+        key=natural_sort_key
+    )
+
+def list_files(folder: str):
+    return sorted(
+        [os.path.join(folder, f) for f in os.listdir(folder)
+         if os.path.isfile(os.path.join(folder, f))],
+        key=natural_sort_key
+    )
 
 if st.button("Run Analysis"):
     st.write("Calculating...")
 
     csv_output = []
-    for i, filename in enumerate(os.listdir(unzip_folder)):
-        run_path = os.path.join(unzip_folder, filename)
+    for i, foldername in enumerate(os.listdir(unzip_folder)):
+        run_path = os.path.join(unzip_folder, foldername)
         value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
 
-    st.write("Graphing...")
-
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
-
-    st.session_state.val_files = sorted(
-        [os.path.join(unzip_folder, f)
-         for f in os.listdir(unzip_folder)
-         if os.path.isfile(os.path.join(unzip_folder, f))],
-        key=natural_sort_key
-    )
+    st.session_state.animal_folders = list_subfolders(unzip_folder)
 
     now = datetime.now()
     st.session_state.csv_name = f"peak_power_{now.strftime('%Y_%m_%d_%H_%M_%S')}.csv"
-
     st.session_state.analysis_done = True
 
 if st.session_state.analysis_done:
     csv_output = st.session_state.csv_output
-    val_files = st.session_state.val_files
+    animal_folders = st.session_state.animal_folders or []
 
     # main plot
+    st.write("Graphing...")
     fig, ax = plt.subplots(figsize=(11, 8))
     for idx, result in enumerate(csv_output):
         x_coord = np.arange(len(result))
@@ -483,49 +489,67 @@ if st.session_state.analysis_done:
         mime="text/csv",
     )
 
-    # validation UI (NO nested buttons required)
     st.subheader("Validate Results")
 
-    mode = st.radio("Validation mode", ["Random Sample", "Specific Inspection"], horizontal=True)
+    if len(animal_folders) == 0:
+        st.warning("No animal subfolders found.")
+    else:
+        # pick which animal folder to inspect
+        animal_choice = st.selectbox(
+            "Select animal folder",
+            options=animal_folders,
+            format_func=lambda p: os.path.basename(p),
+        )
 
-    if mode == "Random Sample":
-        if len(val_files) == 0:
-            print(val_files)
-            st.warning("No files found in validation folder.")
-        else:
-            n_samples = max(1, int(0.05 * len(val_files)))
-            if st.button("Run Random Sample"):
-                random_indices = random.sample(range(len(val_files)), n_samples)
-                for i in random_indices:
-                    val_path = val_files[i]
-                    fig = val_max_inst_power(val_path, i)
-                    st.pyplot(fig)
+        open_animal_folder = list_files(animal_choice)
 
-    else:  # Specific Inspection
-        if len(val_files) == 0:
-            st.warning("No files found in validation folder.")
+        if len(open_animal_folder) == 0:
+            st.warning("No files found in the selected animal folder.")
         else:
-            start = st.number_input(
-                "Start index (inclusive)",
-                min_value=0,
-                max_value=len(val_files) - 1,
-                value=0,
-                step=1,
-            )
-            end = st.number_input(
-                "End index (inclusive)",
-                min_value=0,
-                max_value=len(val_files) - 1,
-                value=len(val_files) - 1,
-                step=1,
+            mode = st.radio(
+                "Validation mode",
+                ["Random Sample", "Specific Inspection"],
+                horizontal=True,
             )
 
-            if start > end:
-                st.error("Start index must be less than or equal to end index.")
-            else:
-                if st.button("Run Specific Inspection"):
-                    for i in range(int(start), int(end) + 1):
-                        val_path = val_files[i]
+            if mode == "Random Sample":
+                pct = st.slider("Sample fraction", 0.0, 1.0, 0.05, 0.01)
+                n_samples = max(1, int(pct * len(open_animal_folder)))
+
+                if st.button("Run Random Sample"):
+                    random_indices = random.sample(
+                        range(len(open_animal_folder)),
+                        k=min(n_samples, len(open_animal_folder)),
+                    )
+                    for i in random_indices:
+                        val_path = open_animal_folder[i]
                         fig = val_max_inst_power(val_path, i)
                         st.pyplot(fig)
+                        st.caption(f"{os.path.basename(val_path)} (index {i})")
+
+            else:  # Specific Inspection
+                start = st.number_input(
+                    "Start index (inclusive)",
+                    min_value=0,
+                    max_value=len(open_animal_folder) - 1,
+                    value=0,
+                    step=1,
+                )
+                end = st.number_input(
+                    "End index (inclusive)",
+                    min_value=0,
+                    max_value=len(open_animal_folder) - 1,
+                    value=len(open_animal_folder) - 1,
+                    step=1,
+                )
+
+                if start > end:
+                    st.error("Start index must be less than or equal to end index.")
+                else:
+                    if st.button("Run Specific Inspection"):
+                        for i in range(int(start), int(end) + 1):
+                            val_path = open_animal_folder[i]
+                            fig = val_max_inst_power(val_path, i)
+                            st.pyplot(fig)
+                            st.caption(f"{os.path.basename(val_path)} (index {i})")
 
