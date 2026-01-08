@@ -3,13 +3,18 @@ power.py
 
 Description: Process all animals in a folder, compute normalized maximum instantaneous 
 power for each contraction, and return a figure plus the raw results.
- - fixed contraction detector
+ [y] fixed contraction detector
+ [] add debug function
+ [] make x axis of graph the file names
+ [] fix bug
+ [] add the option to save mass data
+    add the option to upload mass data (from previous generation)
 """
 
 __author__ = "Chaoran Yang"
 __version__ = "2.1"
 __email__ = "cy197@duke.edu"
-__date__ = "2025-12-25"
+__date__ = "2026-01-05"
 
 import os
 import re
@@ -21,7 +26,9 @@ import pandas as pd
 
 import streamlit as st
 import zipfile
-import datetime
+from datetime import datetime
+
+import random
 
 def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
@@ -189,6 +196,9 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     if baseline_std == 0:
         # Flat signal; cannot detect contraction meaningfully
         raise ValueError("Baseline standard deviation is zero; cannot detect contraction.")
+    
+    threshold_std = 5
+    min_duration_ms = 20
 
     deviation = np.abs(force_mN - baseline_mean)
     threshold = threshold_std * baseline_std
@@ -268,12 +278,8 @@ def max_instantaneous_power_from_file(file_path: str) -> float:
 
     return max_power_W
 
-def run_max_inst_power(
-    folder_path: str,
-    mass_kg: float,
-    threshold_std: float = 5.0,
-    min_duration_ms: float = 20.0
-) -> List[List[float]]:
+def run_max_inst_power(folder_path: str,
+                       mass_kg: float) -> List[List[float]]:
     """
     Process one animal folder under `folder_path` and compute normalized
     peak instantaneous power (W/kg) for each contraction.
@@ -284,10 +290,6 @@ def run_max_inst_power(
         Root directory of the one animal folder.
     mass_kg : float
         Animal mass in kilograms used to normalize peak power.
-    threshold_std : float
-        Threshold in units of baseline standard deviation for contraction detection.
-    min_duration_ms : float
-        Minimum contraction duration in milliseconds to avoid false positives.
 
     Returns
     -------
@@ -314,6 +316,49 @@ def run_max_inst_power(
         animal_results.append(normalized_power)
 
     return animal_results
+
+def val_max_inst_power(file_path: str,
+                       i: float) -> plt:
+    """
+    Selects specific .ddf files and shows the power vs. time plot
+    to validate run_max_inst_power results 
+
+    Steps:
+      - Parse DMC file (header + data).
+      - Detect contraction window automatically from force trace.
+      - Use a pre-contraction middle segment as baseline.
+      - Compute instantaneous power: P(t) = F(t) * v(t), converted to Watts.
+    """
+    parsed = parse_dmc_file(file_path)
+    time = parsed["time"]
+    length_mm = parsed["length_mm"]
+    force_mN = parsed["force_mN"]
+    start_idx = parsed["start_idx"]
+    end_idx = parsed["end_idx"]
+    baseline_slice = parsed["baseline_slice"]
+
+    # Baseline correction using the pre-contraction middle segment
+    length_baseline = float(np.mean(length_mm[baseline_slice]))
+    force_baseline = float(np.mean(force_mN[baseline_slice]))
+
+    length_seg = length_mm[start_idx:end_idx] - length_baseline
+    force_seg = force_mN[start_idx:end_idx] - force_baseline
+    time_seg = time[start_idx:end_idx]
+
+    # Velocity (mm/s)
+    velocity_mm_s = np.gradient(length_seg, time_seg)
+
+    # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
+    inst_power_W = 1e-6 * force_seg * velocity_mm_s
+
+    fig, ax = plt.subplots(figsize=(11, 8))
+    ax.plot(time, inst_power_W)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Normalized Power (W/kg)")
+    ax.set_title(f"{file_path} (index {i})")
+    ax.grid(True)
+
+    return fig
 
 st.title("Peak Power Analysis")
 
@@ -377,16 +422,12 @@ if uploaded_zip:
         value = st.number_input(f"{i} Mass (g):", min_value=0.0, value=1.0, step=0.00001) 
         mass_g.append(value)
 
-    threshold_std = st.number_input("Threshold:",min_value=0.0, value=5.0,step=0.1)
-    min_duration_ms = st.number_input("Minimum Duration:",min_value=0, value=20, step=1)
-
 if st.button("Run Analysis"):
     st.write("Calculating...")
     csv_output = []
     for i, filename in enumerate(os.listdir(unzip_folder)): 
         run_path = os.path.join(unzip_folder,filename)
-        value = run_max_inst_power(run_path, mass_kg=mass_g[i]*0.001,
-                                   threshold_std=threshold_std,min_duration_ms=min_duration_ms)
+        value = run_max_inst_power(run_path, mass_kg=mass_g[i]*0.001)
         csv_output.append(value)
     st.write("Graphing...")
 
@@ -414,6 +455,46 @@ if st.button("Run Analysis"):
             data=csv,
             file_name=csv_name,
             mime='text/csv')
+    
+    val_files = sorted([os.path.join(unzip_folder, f)
+                        for f in os.listdir(unzip_folder)
+                        if os.path.isfile(os.path.join(unzip_folder, f))], 
+                        key=natural_sort_key)
 
-# add the option to save mass data
-# add the option to upload mass data (from previous generation)
+    st.button("Validate Results")
+
+    if st.button("Random Sample"):
+        if len(val_files) == 0:
+            st.warning("No files found in validation folder.")
+        else:
+            n_samples = max(1,int(0.05*len(val_files)))
+            random_indices = random.sample(range(len(val_files)), n_samples)
+
+            for i in random_indices:
+                val_path = val_files[i]
+                fig = val_max_inst_power(val_path,i)
+                st.pyplot(fig)
+
+    if st.button("Specific Inspection"):
+        start = st.number_input(
+            "Start index (inclusive)",
+            min_value=0,
+            max_value=len(val_files) - 1,
+            value=0,
+            step=1,
+        )
+        end = st.number_input(
+            "End index (inclusive)",
+            min_value=0,
+            max_value=len(val_files) - 1,
+            value=min(0, len(val_files) - 1),
+            step=1,
+        )
+
+        if start > end:
+            st.error("Start index must be less than or equal to end index.")
+        else:
+            for i in range(start, end + 1):
+                val_path = val_files[i]
+                fig = val_max_inst_power(val_path,i)
+                st.pyplot(fig)
