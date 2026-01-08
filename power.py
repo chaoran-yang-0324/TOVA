@@ -461,40 +461,40 @@ if st.button("Run Analysis"):
                         if os.path.isfile(os.path.join(unzip_folder, f))], 
                         key=natural_sort_key)
 
-    st.button("Validate Results")
+    if st.button("Validate Results"):
 
-    if st.button("Random Sample"):
-        if len(val_files) == 0:
-            st.warning("No files found in validation folder.")
-        else:
-            n_samples = max(1,int(0.05*len(val_files)))
-            random_indices = random.sample(range(len(val_files)), n_samples)
+        if st.button("Random Sample"):
+            if len(val_files) == 0:
+                st.warning("No files found in validation folder.")
+            else:
+                n_samples = max(1,int(0.05*len(val_files)))
+                random_indices = random.sample(range(len(val_files)), n_samples)
 
-            for i in random_indices:
-                val_path = val_files[i]
-                fig = val_max_inst_power(val_path,i)
-                st.pyplot(fig)
+                for i in random_indices:
+                    val_path = val_files[i]
+                    fig = val_max_inst_power(val_path,i)
+                    st.pyplot(fig)
 
-    if st.button("Specific Inspection"):
-        start = st.number_input(
-            "Start index (inclusive)",
-            min_value=0,
-            max_value=len(val_files) - 1,
-            value=0,
-            step=1,
-        )
-        end = st.number_input(
-            "End index (inclusive)",
-            min_value=0,
-            max_value=len(val_files) - 1,
-            value=min(0, len(val_files) - 1),
-            step=1,
-        )
+        if st.button("Specific Inspection"):
+            start = st.number_input(
+                "Start index (inclusive)",
+                min_value=0,
+                max_value=len(val_files) - 1,
+                value=0,
+                step=1,
+            )
+            end = st.number_input(
+                "End index (inclusive)",
+                min_value=0,
+                max_value=len(val_files) - 1,
+                value=min(0, len(val_files) - 1),
+                step=1,
+            )
 
-        if start > end:
-            st.error("Start index must be less than or equal to end index.")
-        else:
-            for i in range(start, end + 1):
-                val_path = val_files[i]
-                fig = val_max_inst_power(val_path,i)
-                st.pyplot(fig)
+            if start > end:
+                st.error("Start index must be less than or equal to end index.")
+            else:
+                for i in range(start, end + 1):
+                    val_path = val_files[i]
+                    fig = val_max_inst_power(val_path,i)
+                    st.pyplot(fig)
