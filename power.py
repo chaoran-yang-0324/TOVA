@@ -422,60 +422,88 @@ if uploaded_zip:
         value = st.number_input(f"{i} Mass (g):", min_value=0.0, value=1.0, step=0.00001) 
         mass_g.append(value)
 
+if "analysis_done" not in st.session_state:
+    st.session_state.analysis_done = False
+if "csv_output" not in st.session_state:
+    st.session_state.csv_output = None
+if "val_files" not in st.session_state:
+    st.session_state.val_files = None
+if "csv_name" not in st.session_state:
+    st.session_state.csv_name = None
+
 if st.button("Run Analysis"):
     st.write("Calculating...")
+
     csv_output = []
-    for i, filename in enumerate(os.listdir(unzip_folder)): 
-        run_path = os.path.join(unzip_folder,filename)
-        value = run_max_inst_power(run_path, mass_kg=mass_g[i]*0.001)
+    for i, filename in enumerate(os.listdir(unzip_folder)):
+        run_path = os.path.join(unzip_folder, filename)
+        value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
+
     st.write("Graphing...")
 
-    fig, ax = plt.subplots(figsize=(11, 8))
+    # store results so they survive reruns
+    st.session_state.csv_output = csv_output
 
+    st.session_state.val_files = sorted(
+        [os.path.join(unzip_folder, f)
+         for f in os.listdir(unzip_folder)
+         if os.path.isfile(os.path.join(unzip_folder, f))],
+        key=natural_sort_key
+    )
+
+    now = datetime.now()
+    st.session_state.csv_name = f"peak_power_{now.strftime('%Y_%m_%d_%H_%M_%S')}.csv"
+
+    st.session_state.analysis_done = True
+
+if st.session_state.analysis_done:
+    csv_output = st.session_state.csv_output
+    val_files = st.session_state.val_files
+
+    # main plot
+    fig, ax = plt.subplots(figsize=(11, 8))
     for idx, result in enumerate(csv_output):
         x_coord = np.arange(len(result))
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
-
     ax.set_xlabel("Contraction Index")
     ax.set_ylabel("Normalized Power (W/kg)")
     ax.set_title("Peak Power")
     ax.legend()
     ax.grid(True)
-
     st.pyplot(fig)
 
-    now = datetime.now()
-    timestamp = now.strftime("%Y_%m_%d_%H_%M_%S")
-    csv_name=f"peak_power_{timestamp}.csv"
-
+    # download
     df = pd.DataFrame(csv_output)
-    csv = df.to_csv(index=False).encode('utf-8')    
-    st.download_button(label="Download CSV",
-            data=csv,
-            file_name=csv_name,
-            mime='text/csv')
-    
-    val_files = sorted([os.path.join(unzip_folder, f)
-                        for f in os.listdir(unzip_folder)
-                        if os.path.isfile(os.path.join(unzip_folder, f))], 
-                        key=natural_sort_key)
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download CSV",
+        data=csv_bytes,
+        file_name=st.session_state.csv_name,
+        mime="text/csv",
+    )
 
-    if st.button("Validate Results"):
+    # validation UI (NO nested buttons required)
+    st.subheader("Validate Results")
 
-        if st.button("Random Sample"):
-            if len(val_files) == 0:
-                st.warning("No files found in validation folder.")
-            else:
-                n_samples = max(1,int(0.05*len(val_files)))
+    mode = st.radio("Validation mode", ["Random Sample", "Specific Inspection"], horizontal=True)
+
+    if mode == "Random Sample":
+        if len(val_files) == 0:
+            st.warning("No files found in validation folder.")
+        else:
+            n_samples = max(1, int(0.05 * len(val_files)))
+            if st.button("Run Random Sample"):
                 random_indices = random.sample(range(len(val_files)), n_samples)
-
                 for i in random_indices:
                     val_path = val_files[i]
-                    fig = val_max_inst_power(val_path,i)
+                    fig = val_max_inst_power(val_path, i)
                     st.pyplot(fig)
 
-        if st.button("Specific Inspection"):
+    else:  # Specific Inspection
+        if len(val_files) == 0:
+            st.warning("No files found in validation folder.")
+        else:
             start = st.number_input(
                 "Start index (inclusive)",
                 min_value=0,
@@ -487,14 +515,16 @@ if st.button("Run Analysis"):
                 "End index (inclusive)",
                 min_value=0,
                 max_value=len(val_files) - 1,
-                value=min(0, len(val_files) - 1),
+                value=len(val_files) - 1,
                 step=1,
             )
 
             if start > end:
                 st.error("Start index must be less than or equal to end index.")
             else:
-                for i in range(start, end + 1):
-                    val_path = val_files[i]
-                    fig = val_max_inst_power(val_path,i)
-                    st.pyplot(fig)
+                if st.button("Run Specific Inspection"):
+                    for i in range(int(start), int(end) + 1):
+                        val_path = val_files[i]
+                        fig = val_max_inst_power(val_path, i)
+                        st.pyplot(fig)
+
