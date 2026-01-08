@@ -352,7 +352,7 @@ def val_max_inst_power(file_path: str,
     inst_power_W = 1e-6 * force_seg * velocity_mm_s
 
     fig, ax = plt.subplots(figsize=(11, 8))
-    ax.plot(time, inst_power_W)
+    ax.plot(time_seg, inst_power_W)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Normalized Power (W/kg)")
     ax.set_title(f"{file_path} (index {i})")
