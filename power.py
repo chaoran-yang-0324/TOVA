@@ -110,9 +110,15 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
             initial_baseline_end = None
             for j in range(len(prot_df)):
                 if str(prot_df.iloc[j, 1]).strip() == "Stimulus-Tetanus":
-                    initial_baseline_end = float(prot_df.iloc[j, 0])*sample_freq_hz
+                    initial_baseline_end = 0.8*(float(prot_df.iloc[j, 0]) + 
+                                                float(prot_df.iloc[j, 3].split(",")[0].strip()))*sample_freq_hz
                     print("(cy) initial baseline end")
                     print(initial_baseline_end)
+
+                    final_baseline_start = 1.2*(float(prot_df.iloc[j, 0]) + 
+                                                float(prot_df.iloc[j, 3].split(",")[3].strip()))*sample_freq_hz
+                    print("(cy) final baseline start")
+                    print(final_baseline_start)
                     break
 
             break
@@ -189,60 +195,13 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     sample_indices = np.arange(num_samples, dtype=float)
     time_s = sample_indices / sample_freq_hz
 
-    baseline_region = force_mN[:int(initial_baseline_end)]
-    baseline_mean = float(np.mean(baseline_region))
-    baseline_std = float(np.std(baseline_region))
-
-    if baseline_std == 0:
-        # Flat signal; cannot detect contraction meaningfully
-        raise ValueError("Baseline standard deviation is zero; cannot detect contraction.")
-    
-    threshold_std = 5
-    min_duration_ms = 20
-
-    deviation = np.abs(force_mN - baseline_mean)
-    threshold = threshold_std * baseline_std
-    active_mask = deviation > threshold
-
-    min_samples = int((min_duration_ms / 1000.0) * sample_freq_hz)
-    if min_samples < 1:
-        min_samples = 1
-
-    # Find the first index where we have a contiguous run of 'min_samples' active points
-    start_idx = None
-    i = 0
-    while i < num_samples - min_samples:
-        if np.all(active_mask[i:i + min_samples]):
-            start_idx = i
-            break
-        i += 1
-
-    if start_idx is None:
-        raise ValueError("No contraction detected in force trace.")
-
-    # End index: last point where deviation is above threshold after the start
-    active_indices = np.where(active_mask)[0]
-    end_idx = active_indices[active_indices >= start_idx].max()
-    print("(cy) end index")
-    print(end_idx)
-
-    pre_region_len = start_idx
-    baseline_start = int(0.2 * pre_region_len)
-    baseline_end = int(0.8 * pre_region_len)
-    if baseline_end <= baseline_start:
-        baseline_start = 0
-        baseline_end = pre_region_len
-
-    baseline_slice = slice(baseline_start, baseline_end)
-
     return {
         "time": time_s,
         "length_mm": length_mm,
         "force_mN": force_mN,
         "raw_df": df,
-        "start_idx": 0.8*initial_baseline_end,
-        "end_idx": 1.2*end_idx,
-        "baseline_slice": baseline_slice
+        "start_idx": int(0.8*initial_baseline_end),
+        "end_idx": int(1.2*final_baseline_start)
     }
 
 def max_instantaneous_power_from_file(file_path: str) -> float:
