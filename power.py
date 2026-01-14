@@ -476,7 +476,8 @@ if st.session_state.analysis_done:
             format_func=lambda p: os.path.basename(p),
         )
 
-        open_animal_folder = list_files(animal_choice)
+        open_animal_folder = [f for f in list_files(animal_choice)
+                              if f.lower().endswith(".ddf")]
 
         if len(open_animal_folder) == 0:
             st.warning("No files found in the selected animal folder.")
@@ -488,7 +489,7 @@ if st.session_state.analysis_done:
             )
 
             if mode == "Random Sample":
-                pct = st.slider("Sample fraction", 0.0, 1.0, 0.05, 0.01)
+                pct = st.slider("Sample fraction", 0.0, 0.5, 1.0, 0.05, 0.01)
                 n_samples = max(1, int(pct * len(open_animal_folder)))
 
                 if st.button("Run Random Sample"):
