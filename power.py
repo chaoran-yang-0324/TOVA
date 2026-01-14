@@ -220,11 +220,10 @@ def max_instantaneous_power_from_file(file_path: str) -> float:
     force_mN = parsed["force_mN"]
     start_idx = parsed["start_idx"]
     end_idx = parsed["end_idx"]
-    baseline_slice = parsed["baseline_slice"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[baseline_slice]))
-    force_baseline = float(np.mean(force_mN[baseline_slice]))
+    length_baseline = float(np.mean(length_mm[0:start_idx]))
+    force_baseline = float(np.mean(force_mN[0:start_idx]))
 
     length_seg = length_mm[start_idx:end_idx] - length_baseline
     force_seg = force_mN[start_idx:end_idx] - force_baseline
@@ -296,11 +295,10 @@ def val_max_inst_power(file_path: str,
     force_mN = parsed["force_mN"]
     start_idx = parsed["start_idx"]
     end_idx = parsed["end_idx"]
-    baseline_slice = parsed["baseline_slice"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[baseline_slice]))
-    force_baseline = float(np.mean(force_mN[baseline_slice]))
+    length_baseline = float(np.mean(length_mm[0:start_idx]))
+    force_baseline = float(np.mean(force_mN[0:start_idx]))
 
     length_seg = length_mm[start_idx:end_idx] - length_baseline
     force_seg = force_mN[start_idx:end_idx] - force_baseline
@@ -310,7 +308,7 @@ def val_max_inst_power(file_path: str,
     velocity_mm_s = np.gradient(length_seg, time_seg)
 
     # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
-    inst_power_W = 1e-6 * force_seg * velocity_mm_s
+    inst_power_W = - 1e-6 * force_seg * velocity_mm_s
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time_seg, length_seg)
