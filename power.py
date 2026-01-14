@@ -4,9 +4,9 @@ power.py
 Description: Process all animals in a folder, compute normalized maximum instantaneous 
 power for each contraction, and return a figure plus the raw results.
  [y] fixed contraction detector
- [] add debug function
+ [y] add debug function
+ [] write start & end detection into max_inst function, not parse
  [] make x axis of graph the file names
- [] fix bug
  [] add the option to save mass data
     add the option to upload mass data (from previous generation)
 """
@@ -14,7 +14,7 @@ power for each contraction, and return a figure plus the raw results.
 __author__ = "Chaoran Yang"
 __version__ = "2.1"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-01-05"
+__date__ = "2026-01-14"
 
 import os
 import re
@@ -223,6 +223,8 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     # End index: last point where deviation is above threshold after the start
     active_indices = np.where(active_mask)[0]
     end_idx = active_indices[active_indices >= start_idx].max()
+    print("(cy) end index")
+    print(end_idx)
 
     pre_region_len = start_idx
     baseline_start = int(0.2 * pre_region_len)
@@ -238,8 +240,8 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
         "length_mm": length_mm,
         "force_mN": force_mN,
         "raw_df": df,
-        "start_idx": start_idx,
-        "end_idx": end_idx,
+        "start_idx": 0.8*initial_baseline_end,
+        "end_idx": 1.2*end_idx,
         "baseline_slice": baseline_slice
     }
 
@@ -273,7 +275,7 @@ def max_instantaneous_power_from_file(file_path: str) -> float:
     velocity_mm_s = np.gradient(length_seg, time_seg)
 
     # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
-    inst_power_W = 1e-6 * force_seg * velocity_mm_s
+    inst_power_W = - 1e-6 * force_seg * velocity_mm_s
     max_power_W = float(np.max(inst_power_W))
 
     return max_power_W
@@ -371,7 +373,6 @@ def val_max_inst_power(file_path: str,
     ax_p.plot(time_seg, inst_power_W)
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
-    ax_p.legend()
     ax_p.set_title(f"{file_path} (index {i}) Power")
     ax_p.grid(True)
 
