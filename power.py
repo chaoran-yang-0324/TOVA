@@ -332,7 +332,7 @@ def val_max_inst_power(file_path: str,
 
     fig_p, ax_p = plt.subplots(figsize=(11, 8))
     ax_p.plot(time_seg[:min_idx + 1], inst_power_W[:min_idx + 1], label="Power")
-    ax_p.plot(time_seg[max_idx], max_power_W, marker="o", lable="Max Power")
+    ax_p.plot(time_seg[max_idx], max_power_W, marker="o", label="Max Power")
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
     ax_p.legend()
