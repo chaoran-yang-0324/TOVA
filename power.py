@@ -11,6 +11,8 @@ power for each contraction, and return a figure plus the raw results.
     add the option to upload mass data (from previous generation)
 """
 
+# upload this to github and try
+
 __author__ = "Chaoran Yang"
 __version__ = "2.1"
 __email__ = "cy197@duke.edu"
@@ -489,7 +491,7 @@ if st.session_state.analysis_done:
             )
 
             if mode == "Random Sample":
-                pct = st.slider("Sample fraction", 0.0, 0.5, 1.0, 0.05, 0.01)
+                pct = st.slider("Sample fraction", 0.0, 1.0, 0.05, 0.01)
                 n_samples = max(1, int(pct * len(open_animal_folder)))
 
                 if st.button("Run Random Sample"):
