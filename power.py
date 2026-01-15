@@ -11,12 +11,10 @@ power for each contraction, and return a figure plus the raw results.
     add the option to upload mass data (from previous generation)
 """
 
-# upload this to github and try
-
 __author__ = "Chaoran Yang"
 __version__ = "2.1"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-01-14"
+__date__ = "2026-01-15"
 
 import os
 import re
@@ -236,7 +234,9 @@ def max_instantaneous_power_from_file(file_path: str) -> float:
 
     # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
     inst_power_W = - 1e-6 * force_seg * velocity_mm_s
-    max_power_W = float(np.max(inst_power_W))
+    min_idx = np.argmin(inst_power_W)
+    inst_power_sliced = inst_power_W[:min_idx + 1]
+    max_power_W = float(np.max(inst_power_sliced))
 
     return max_power_W
 
@@ -311,27 +311,31 @@ def val_max_inst_power(file_path: str,
 
     # Power: force (mN) * velocity (mm/s) -> W via 1e-6 factor
     inst_power_W = - 1e-6 * force_seg * velocity_mm_s
+    min_idx = np.argmin(inst_power_W)
+    inst_power_sliced = inst_power_W[:min_idx + 1]
+    max_power_W = float(np.max(inst_power_sliced))
+    max_idx = np.argmax(inst_power_sliced)
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
-    ax_l.plot(time_seg, length_seg)
+    ax_l.plot(time_seg[:min_idx + 1], length_seg[:min_idx + 1])
     ax_l.set_xlabel("Time (s)")
     ax_l.set_ylabel("Length (mm))")
-    ax_l.legend()
     ax_l.set_title(f"{file_path} (index {i}) Length")
     ax_l.grid(True)
 
     fig_f, ax_f = plt.subplots(figsize=(11, 8))
-    ax_f.plot(time_seg, force_seg)
+    ax_f.plot(time_seg[:min_idx + 1], force_seg[:min_idx + 1])
     ax_f.set_xlabel("Time (s)")
     ax_f.set_ylabel("Force (mN)")
-    ax_f.legend()
     ax_f.set_title(f"{file_path} (index {i}) Force")
     ax_f.grid(True)
 
     fig_p, ax_p = plt.subplots(figsize=(11, 8))
-    ax_p.plot(time_seg, inst_power_W)
+    ax_p.plot(time_seg[:min_idx + 1], inst_power_W[:min_idx + 1], label="Power")
+    ax_p.plot(time_seg[max_idx], max_power_W, marker="o", lable="Max Power")
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
+    ax_p.legend()
     ax_p.set_title(f"{file_path} (index {i}) Power")
     ax_p.grid(True)
 
@@ -495,10 +499,10 @@ if st.session_state.analysis_done:
                 n_samples = max(1, int(pct * len(open_animal_folder)))
 
                 if st.button("Run Random Sample"):
-                    random_indices = random.sample(
+                    random_indices = sorted(random.sample(
                         range(len(open_animal_folder)),
                         k=min(n_samples, len(open_animal_folder)),
-                    )
+                    ))
                     for i in random_indices:
                         val_path = open_animal_folder[i]
                         fig_l, fig_f, fig_p = val_max_inst_power(val_path, i)
