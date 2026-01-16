@@ -5,7 +5,7 @@ Description: Process all animals in a folder, compute normalized maximum instant
 power for each contraction, and return a figure plus the raw results.
  [y] fixed contraction detector
  [y] add debug function
- [] write start & end detection into max_inst function, not parse
+ [y] write start & end detection into max_inst function, not parse
  [] make x axis of graph the file names
  [] add the option to save mass data
     add the option to upload mass data (from previous generation)
@@ -14,7 +14,7 @@ power for each contraction, and return a figure plus the raw results.
 __author__ = "Chaoran Yang"
 __version__ = "2.1"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-01-15"
+__date__ = "2026-01-16"
 
 import os
 import re
@@ -129,7 +129,8 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
             units = lines[i + 1].strip().split("\t")[1:]
             scales = [float(x) for x in lines[i + 2].strip().split("\t")[1:]]
             offsets = [float(x) for x in lines[i + 3].strip().split("\t")[1:]]
-            i += 4
+            tads = [float(x) for x in lines[i + 4].strip().split("\t")[1:]]
+            i += 5
             continue
 
         i += 1
@@ -141,13 +142,9 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
         raise ValueError(f"Sample frequency not found in {file_path}")
 
     # Build calibration dictionary
-    calib: dict[str, dict[str, float]] = {}
-    for name, unit, scale, offset in zip(channel_names, units, scales, offsets):
-        calib[name] = {
-            "units": unit,
-            "scale": scale,
-            "offset": offset,
-        }
+    calib = {}
+    for name, unit, scale, offset, tad in zip(channel_names, units, scales, offsets, tads):
+        calib[name] = {"units": unit, "scale": scale, "offset": offset, "tad": tad}
 
     # Read test data using pandas:
     # skip all lines up to and including 'Test Data in Volts:'
@@ -183,8 +180,8 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     force_volts = df[force_chan].to_numpy(dtype=float)
 
     # Convert to physical units: units = (volts - offset) * scale
-    length_mm = (length_volts - calib[length_chan]["offset"]) * calib[length_chan]["scale"]
-    force_ref = (force_volts - calib[force_chan]["offset"]) * calib[force_chan]["scale"]
+    length_mm = (length_volts - calib[length_chan]["offset"]) * calib[length_chan]["scale"] + calib[length_chan]["tad"]
+    force_ref = (force_volts - calib[force_chan]["offset"]) * calib[force_chan]["scale"] + calib[force_chan]["tad"]
 
     # Treat 'Ref' for force as mN (matches your previous scaling)
     force_mN = force_ref
