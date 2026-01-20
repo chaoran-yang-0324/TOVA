@@ -428,11 +428,13 @@ if st.button("Run Analysis"):
 
     csv_output = []
     csv_x_labels = []
-    for i, foldername in enumerate(os.listdir(unzip_folder)):
+    for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
         run_path = os.path.join(unzip_folder, foldername)
         value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
-        csv_x_labels.append(foldername)
+
+        for filename in sorted(os.listdir(run_path), key=natural_sort_key):
+            csv_x_labels.append(filename)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
