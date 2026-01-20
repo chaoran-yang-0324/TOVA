@@ -295,7 +295,7 @@ def run_isotonic_work(folder_path: str,
 
         print(f"Processing {f} ...")
 
-        isotonic_work_J = run_isotonic_work(data_file)
+        isotonic_work_J = isotonic_work_from_file(data_file)
         normalized_isotonic_work = isotonic_work_J / mass_kg  # W/kg
         animal_results.append(normalized_isotonic_work)
 
