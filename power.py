@@ -427,10 +427,12 @@ if st.button("Run Analysis"):
     st.write("Calculating...")
 
     csv_output = []
+    csv_x_labels = []
     for i, foldername in enumerate(os.listdir(unzip_folder)):
         run_path = os.path.join(unzip_folder, foldername)
         value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
+        csv_x_labels.append(foldername)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
@@ -450,6 +452,8 @@ if st.session_state.analysis_done:
     for idx, result in enumerate(csv_output):
         x_coord = np.arange(len(result))
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
+    ax.set_xticks(np.arange(len(csv_x_labels)))
+    ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
     ax.set_xlabel("Contraction Index")
     ax.set_ylabel("Normalized Power (W/kg)")
     ax.set_title("Peak Power")
