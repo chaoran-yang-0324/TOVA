@@ -436,7 +436,8 @@ if st.button("Run Analysis"):
         csv_x_labels.append([])  # new row for this run
 
         for filename in sorted(os.listdir(run_path), key=natural_sort_key):
-            csv_x_labels[i].append(filename)
+            if filename.lower().endswith(".ddf"):
+                csv_x_labels[i].append(filename)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
@@ -457,7 +458,10 @@ if st.session_state.analysis_done:
         x_coord = np.arange(len(result))
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
     # ax.set_xticks(np.arange(len(csv_x_labels)))
-    ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
+    # ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
+    ticks = np.arange(len(csv_x_labels))
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(ticks)
     ax.set_xlabel("Contraction Index")
     ax.set_ylabel("Normalized Power (W/kg)")
     ax.set_title("Peak Power")
