@@ -408,6 +408,8 @@ if "animal_folders" not in st.session_state:
     st.session_state.animal_folders = None
 if "csv_name" not in st.session_state:
     st.session_state.csv_name = None
+if "csv_x_labels" not in st.session_state:
+    st.session_state.csv_x_labels = None
 
 def list_subfolders(parent_dir: str):
     return sorted(
@@ -428,19 +430,20 @@ if st.button("Run Analysis"):
 
     csv_output = []
     csv_x_labels = []
+
     for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
         run_path = os.path.join(unzip_folder, foldername)
         value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
 
         csv_x_labels.append([])  # new row for this run
-
         for filename in sorted(os.listdir(run_path), key=natural_sort_key):
             if filename.lower().endswith(".ddf"):
                 csv_x_labels[i].append(filename)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
+    st.session_state.csv_x_labels = csv_x_labels   
     st.session_state.animal_folders = list_subfolders(unzip_folder)
 
     now = datetime.now()
@@ -449,6 +452,7 @@ if st.button("Run Analysis"):
 
 if st.session_state.analysis_done:
     csv_output = st.session_state.csv_output
+    csv_x_labels = st.session_state.csv_x_labels   
     animal_folders = st.session_state.animal_folders or []
 
     # main plot
@@ -457,8 +461,7 @@ if st.session_state.analysis_done:
     for idx, result in enumerate(csv_output):
         x_coord = np.arange(len(result))
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
-    # ax.set_xticks(np.arange(len(csv_x_labels)))
-    # ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
+
     ticks = np.arange(len(result))
     ax.set_xticks(ticks)
     ax.set_xticklabels(ticks)
@@ -473,7 +476,6 @@ if st.session_state.analysis_done:
     df = pd.DataFrame(csv_output)
 
     rows = []
-
     for i in range(len(csv_x_labels)):
         labels = csv_x_labels[i]
         values = df.iloc[i].tolist()
