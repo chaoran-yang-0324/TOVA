@@ -456,7 +456,7 @@ if st.session_state.analysis_done:
     for idx, result in enumerate(csv_output):
         x_coord = np.arange(len(result))
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
-    ax.set_xticks(np.arange(len(csv_x_labels)))
+    # ax.set_xticks(np.arange(len(csv_x_labels)))
     ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
     ax.set_xlabel("Contraction Index")
     ax.set_ylabel("Normalized Power (W/kg)")
@@ -467,7 +467,15 @@ if st.session_state.analysis_done:
 
     # download
     df = pd.DataFrame(csv_output)
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
+
+    rows = []
+    for i in range(len(csv_x_labels)):
+        rows.append(csv_x_labels[i])        # label row
+        rows.append(df.iloc[i].tolist())    # data row
+
+    final_df = pd.DataFrame(rows)
+    csv_bytes = final_df.to_csv(index=False, header=False).encode("utf-8")
+
     st.download_button(
         label="Download CSV",
         data=csv_bytes,
