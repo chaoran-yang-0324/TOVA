@@ -6,7 +6,7 @@ power for each contraction, and return a figure plus the raw results.
  [y] fixed contraction detector
  [y] add debug function
  [y] write start & end detection into max_inst function, not parse
- [] make x axis of graph the file names
+ [y] make x axis of graph the file names
  [] add the option to save mass data
     add the option to upload mass data (from previous generation)
 """
@@ -191,6 +191,12 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     num_samples = len(df)
     sample_indices = np.arange(num_samples, dtype=float)
     time_s = sample_indices / sample_freq_hz
+
+    if initial_baseline_end is None:
+        raise ValueError(f"{file_path}: initial_baseline_end is None")
+
+    if not np.isfinite(initial_baseline_end):
+        raise ValueError(f"{file_path}: initial_baseline_end is not finite: {initial_baseline_end} ({type(initial_baseline_end)})")
 
     return {
         "time": time_s,
