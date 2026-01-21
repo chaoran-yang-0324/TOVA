@@ -433,8 +433,10 @@ if st.button("Run Analysis"):
         value = run_max_inst_power(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
 
+        csv_x_labels.append([])  # new row for this run
+
         for filename in sorted(os.listdir(run_path), key=natural_sort_key):
-            csv_x_labels.append(filename)
+            csv_x_labels[i].append(filename)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
