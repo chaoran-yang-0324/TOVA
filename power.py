@@ -459,7 +459,7 @@ if st.session_state.analysis_done:
         ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
     # ax.set_xticks(np.arange(len(csv_x_labels)))
     # ax.set_xticklabels(csv_x_labels, rotation=45, ha="right")
-    ticks = np.arange(len(csv_x_labels))
+    ticks = np.arange(len(result))
     ax.set_xticks(ticks)
     ax.set_xticklabels(ticks)
     ax.set_xlabel("Contraction Index")
@@ -473,12 +473,18 @@ if st.session_state.analysis_done:
     df = pd.DataFrame(csv_output)
 
     rows = []
-    for i in range(len(csv_x_labels)):
-        rows.append(csv_x_labels[i])        # label row
-        rows.append(df.iloc[i].tolist())    # data row
 
-    final_df = pd.DataFrame(rows)
-    csv_bytes = final_df.to_csv(index=False, header=False).encode("utf-8")
+    for i in range(len(csv_x_labels)):
+        labels = csv_x_labels[i]
+        values = df.iloc[i].tolist()
+
+        for fname, val in zip(labels, values):
+            rows.append([fname, val])
+
+        rows.append(["", ""])  # blank line between runs
+
+    final_df = pd.DataFrame(rows, columns=["filename", "peak power"])
+    csv_bytes = final_df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
         label="Download CSV",
