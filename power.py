@@ -112,13 +112,8 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
                 if str(prot_df.iloc[j, 1]).strip() == "Stimulus-Tetanus":
                     initial_baseline_end = 0.8*(float(prot_df.iloc[j, 0]) + 
                                                 float(prot_df.iloc[j, 3].split(",")[0].strip()))*sample_freq_hz
-                    print("(cy) initial baseline end")
-                    print(initial_baseline_end)
-
                     final_baseline_start = 1.2*(float(prot_df.iloc[j, 0]) + 
                                                 float(prot_df.iloc[j, 3].split(",")[3].strip()))*sample_freq_hz
-                    print("(cy) final baseline start")
-                    print(final_baseline_start)
                     break
 
             break
@@ -363,6 +358,8 @@ The folder you upload should be in the format:
            |
             -> ...
        -> ...
+
+- don't change the name of your file when compressing it
 """
 
 st.code(folder_structure, language='text')
