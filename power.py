@@ -7,7 +7,7 @@ power for each contraction, and return a figure plus the raw results.
  [y] add debug function
  [y] write start & end detection into max_inst function, not parse
  [y] make x axis of graph the file names
- [] add the option to save mass data
+ [y] add the option to save mass data
     add the option to upload mass data (from previous generation)
  [y] fix baseline_start detection 
  [] add units to the output CSV file
@@ -570,7 +570,7 @@ if st.session_state.analysis_done:
 
         rows.append(["", ""])  # blank line between runs
 
-    final_df = pd.DataFrame(rows, columns=["filename", "peak power"])
+    final_df = pd.DataFrame(rows, columns=["filename", "peak power (W/kg)"])
     csv_bytes = final_df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
