@@ -9,7 +9,8 @@ power for each contraction, and return a figure plus the raw results.
  [y] make x axis of graph the file names
  [] add the option to save mass data
     add the option to upload mass data (from previous generation)
- [] fix baseline_start detection 
+ [y] fix baseline_start detection 
+ [] add units to the output CSV file
 """
 
 __author__ = "Chaoran Yang"
@@ -444,11 +445,45 @@ if uploaded_zip:
     sorted_folder_names = sorted(os.listdir(unzip_folder), key=natural_sort_key)
     st.write(sorted_folder_names)  # Display contents
 
+    sorted_folder_names = sorted(os.listdir(unzip_folder), key=natural_sort_key)
     mass_g: List[float] = []
 
-    for i, filename in enumerate(os.listdir(unzip_folder)):
-        value = st.number_input(f"{i} Mass (g):", min_value=0.0, value=1.0, step=0.00001) 
-        mass_g.append(value)
+    st.subheader("Animal Mass")
+    mass_mode = st.radio("Mass input mode", ["Manual Input", "Upload CSV"], horizontal=True)
+
+    if mass_mode == "Manual Input":
+        for i, foldername in enumerate(sorted_folder_names):
+            value = st.number_input(f"{foldername} Mass (g):", min_value=0.0, value=1.0, step=0.00001, key=f"mass_{i}")
+            mass_g.append(value)
+
+        # Build and offer download of current mass values
+        mass_df = pd.DataFrame({
+            "folder": sorted_folder_names,
+            "mass_g": mass_g,
+        })
+        st.download_button(
+            label="Save mass data as CSV",
+            data=mass_df.to_csv(index=False).encode("utf-8"),
+            file_name="mass_data.csv",
+            mime="text/csv",
+        )
+
+    else:  # Upload CSV
+        mass_csv = st.file_uploader("Upload mass CSV", type="csv")
+        if mass_csv is not None:
+            uploaded_mass_df = pd.read_csv(mass_csv)
+            if set(["folder", "mass_g"]).issubset(uploaded_mass_df.columns):
+                uploaded_mass_df = uploaded_mass_df.set_index("folder")
+                missing = [f for f in sorted_folder_names if f not in uploaded_mass_df.index]
+                if missing:
+                    st.error(f"These folders have no mass entry in the uploaded CSV: {missing}")
+                else:
+                    for foldername in sorted_folder_names:
+                        mass_g.append(float(uploaded_mass_df.loc[foldername, "mass_g"]))
+                    st.success("Mass data loaded from CSV.")
+                    st.dataframe(uploaded_mass_df.loc[sorted_folder_names])
+            else:
+                st.error('CSV must have columns "folder" and "mass_g".')
 
 if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
