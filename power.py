@@ -36,42 +36,6 @@ def natural_sort_key(s: str):
             for text in re.split(r"([0-9]+)", s)]
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
-                 bootstrap_s: float = 0.5, threshold_std: float = 4.0,
-                 smooth_window_s: float = 0.02) -> int:
-    """
-    Detect the first sample where `signal` departs from its initial baseline.
-
-    Parameters
-    ----------
-    signal          : 1D array (force or length)
-    sample_freq_hz  : sampling rate
-    bootstrap_s     : seconds at the very start to use as baseline estimate
-    threshold_std   : how many baseline SDs counts as "onset"
-    smooth_window_s : smoothing kernel width (seconds) to reduce noise sensitivity
-
-    Returns
-    -------
-    onset index (int)
-    """
-    bootstrap_n = int(bootstrap_s * sample_freq_hz)
-    bootstrap = signal[:bootstrap_n]
-    baseline_mean = np.mean(bootstrap)
-    baseline_std  = np.std(bootstrap)
-
-    # Smooth to avoid triggering on a single noisy spike
-    kernel = max(1, int(smooth_window_s * sample_freq_hz))
-    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
-
-    # First sample where smoothed signal exceeds threshold in either direction
-    deviation = np.abs(smoothed - baseline_mean)
-    crossings = np.where(deviation > threshold_std * baseline_std)[0]
-
-    if len(crossings) == 0:
-        raise ValueError("No onset detected — signal never exceeds threshold. "
-                         "Try lowering threshold_std.")
-    return int(crossings[0])
-
-def detect_onset(signal: np.ndarray, sample_freq_hz: float,
                  bootstrap_s: float = 0.5, threshold_std: float = 3.0,
                  smooth_window_s: float = 0.02) -> int:
     """
