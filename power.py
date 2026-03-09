@@ -9,12 +9,13 @@ power for each contraction, and return a figure plus the raw results.
  [y] make x axis of graph the file names
  [] add the option to save mass data
     add the option to upload mass data (from previous generation)
+ [] fix baseline_start detection 
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.1"
+__version__ = "2.2"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-01-16"
+__date__ = "2026-03-09"
 
 import os
 import re
@@ -34,6 +35,116 @@ def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split(r"([0-9]+)", s)]
 
+def detect_onset(signal: np.ndarray, sample_freq_hz: float,
+                 bootstrap_s: float = 0.5, threshold_std: float = 4.0,
+                 smooth_window_s: float = 0.02) -> int:
+    """
+    Detect the first sample where `signal` departs from its initial baseline.
+
+    Parameters
+    ----------
+    signal          : 1D array (force or length)
+    sample_freq_hz  : sampling rate
+    bootstrap_s     : seconds at the very start to use as baseline estimate
+    threshold_std   : how many baseline SDs counts as "onset"
+    smooth_window_s : smoothing kernel width (seconds) to reduce noise sensitivity
+
+    Returns
+    -------
+    onset index (int)
+    """
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    bootstrap = signal[:bootstrap_n]
+    baseline_mean = np.mean(bootstrap)
+    baseline_std  = np.std(bootstrap)
+
+    # Smooth to avoid triggering on a single noisy spike
+    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
+
+    # First sample where smoothed signal exceeds threshold in either direction
+    deviation = np.abs(smoothed - baseline_mean)
+    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+
+    if len(crossings) == 0:
+        raise ValueError("No onset detected — signal never exceeds threshold. "
+                         "Try lowering threshold_std.")
+    return int(crossings[0])
+
+def detect_onset(signal: np.ndarray, sample_freq_hz: float,
+                 bootstrap_s: float = 0.5, threshold_std: float = 4.0,
+                 smooth_window_s: float = 0.02) -> int:
+    """
+    Detect the first sample where `signal` departs from its initial baseline.
+
+    Parameters
+    ----------
+    signal          : 1D array (force or length)
+    sample_freq_hz  : sampling rate
+    bootstrap_s     : seconds at the very start used to estimate baseline
+    threshold_std   : number of baseline SDs required to declare onset
+    smooth_window_s : smoothing kernel width (seconds) to suppress noise
+
+    Returns
+    -------
+    onset index (int)
+    """
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    bootstrap = signal[:bootstrap_n]
+    baseline_mean = np.mean(bootstrap)
+    baseline_std  = np.std(bootstrap)
+
+    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
+
+    deviation = np.abs(smoothed - baseline_mean)
+    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+
+    if len(crossings) == 0:
+        raise ValueError(
+            "No onset detected — signal never exceeds threshold. "
+            "Try lowering threshold_std."
+        )
+    return int(crossings[0])
+
+def detect_offset(signal: np.ndarray, sample_freq_hz: float,
+                  bootstrap_s: float = 0.5, threshold_std: float = 4.0,
+                  smooth_window_s: float = 0.02) -> int:
+    """
+    Detect the last sample where `signal` is still outside its initial baseline.
+    Scans from the end of the array backward to find where the signal
+    re-enters the baseline band.
+
+    Parameters
+    ----------
+    signal          : 1D array (force or length)
+    sample_freq_hz  : sampling rate
+    bootstrap_s     : seconds at the very start used to estimate baseline
+    threshold_std   : number of baseline SDs required to declare offset
+    smooth_window_s : smoothing kernel width (seconds) to suppress noise
+
+    Returns
+    -------
+    offset index (int)
+    """
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    bootstrap = signal[:bootstrap_n]
+    baseline_mean = np.mean(bootstrap)
+    baseline_std  = np.std(bootstrap)
+
+    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
+
+    deviation = np.abs(smoothed - baseline_mean)
+    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+
+    if len(crossings) == 0:
+        raise ValueError(
+            "No offset detected — signal never exceeds threshold. "
+            "Try lowering threshold_std."
+        )
+    return int(crossings[-1])
+
 def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     """
     Parse a DMCv5.x-style data file.
@@ -46,12 +157,14 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     Returns
     -------
     dict with keys:
-      'time'        : time axis in seconds
-      'length_mm'   : muscle length in mm (using calibrated AI channel)
-      'force_mN'    : force in mN (using calibrated AI channel)
-      'raw_df'      : full pandas DataFrame of the test data
+      'time'             : time axis in seconds
+      'length_mm'        : muscle length in mm (using calibrated AI channel)
+      'force_mN'         : force in mN (using calibrated AI channel)
+      'raw_df'           : full pandas DataFrame of the test data
+      'start_idx_force'  : onset index detected from force signal
+      'start_idx_length' : onset index detected from length signal
     """
-    
+
     with open(file_path, "r", encoding="latin-1") as f:
         lines = f.readlines()
 
@@ -65,7 +178,6 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     offsets: List[float] = []
 
     i = 0
-    prot_skiprows = None  # row index where "Protocol Array" line occurs
 
     while i < len(lines):
         line = lines[i].strip()
@@ -79,43 +191,9 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
             i += 1
             continue
 
-        # Protocol Array start
-        if line.startswith("Protocol Array"):
-            prot_skiprows = i
-            i += 1
-            continue
-
-        # Locate data marker (end of protocol section)
+        # Locate data marker
         if line.startswith("Test Data in Volts"):
             data_marker_idx = i
-
-            if prot_skiprows is None:
-                raise ValueError(f'Found "Test Data in Volts" before "Protocol Array" in {file_path}')
-
-            # Assume protocol table begins on the next line after "Protocol Array"
-            protocol_start = prot_skiprows + 1
-            protocol_nrows = data_marker_idx - protocol_start
-            if protocol_nrows <= 0:
-                raise ValueError(f"No protocol rows found in {file_path}")
-
-            prot_df = pd.read_csv(
-                file_path,
-                delimiter="\t",
-                skiprows=protocol_start,
-                nrows=protocol_nrows,
-                engine="python",
-                header=None,
-            )
-
-            initial_baseline_end = None
-            for j in range(len(prot_df)):
-                if str(prot_df.iloc[j, 1]).strip() == "Stimulus-Tetanus":
-                    initial_baseline_end = 0.8*(float(prot_df.iloc[j, 0]) + 
-                                                float(prot_df.iloc[j, 3].split(",")[0].strip()))*sample_freq_hz
-                    final_baseline_start = 1.2*(float(prot_df.iloc[j, 0]) + 
-                                                float(prot_df.iloc[j, 3].split(",")[3].strip()))*sample_freq_hz
-                    break
-
             break
 
         # Calibration block
@@ -182,24 +260,25 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     force_mN = force_ref
 
     # Build time axis
-    # Sample column is an integer index; but we can compute time directly from index
     num_samples = len(df)
     sample_indices = np.arange(num_samples, dtype=float)
     time_s = sample_indices / sample_freq_hz
 
-    if initial_baseline_end is None:
-        raise ValueError(f"{file_path}: initial_baseline_end is None")
-
-    if not np.isfinite(initial_baseline_end):
-        raise ValueError(f"{file_path}: initial_baseline_end is not finite: {initial_baseline_end} ({type(initial_baseline_end)})")
+    # Detect onset from each signal independently
+    start_idx_force  = detect_onset(force_mN,  sample_freq_hz)
+    start_idx_length = detect_onset(length_mm, sample_freq_hz)
+    end_idx_force    = detect_offset(force_mN,  sample_freq_hz)
+    end_idx_length   = detect_offset(length_mm, sample_freq_hz)
 
     return {
-        "time": time_s,
-        "length_mm": length_mm,
-        "force_mN": force_mN,
-        "raw_df": df,
-        "start_idx": int(0.8*initial_baseline_end),
-        "end_idx": int(1.2*final_baseline_start)
+        "time":             time_s,
+        "length_mm":        length_mm,
+        "force_mN":         force_mN,
+        "raw_df":           df,
+        "start_idx_force":  start_idx_force,
+        "start_idx_length": start_idx_length,
+        "end_idx_force":    end_idx_force,
+        "end_idx_length":   end_idx_length,
     }
 
 def max_instantaneous_power_from_file(file_path: str) -> float:
@@ -216,16 +295,18 @@ def max_instantaneous_power_from_file(file_path: str) -> float:
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = parsed["start_idx"]
-    end_idx = parsed["end_idx"]
+    # start_idx_force = parsed["start_idx_force"]
+    start_idx_length = parsed["start_idx_length"]
+    # end_idx_force = parsed["end_idx_force"]
+    end_idx_length = parsed["end_idx_length"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[0:start_idx]))
-    force_baseline = float(np.mean(force_mN[0:start_idx]))
+    length_baseline = float(np.mean(length_mm[0:start_idx_length-5]))  # small buffer 
+    force_baseline = float(np.mean(force_mN[0:start_idx_length-5]))
 
-    length_seg = length_mm[start_idx:end_idx] - length_baseline
-    force_seg = force_mN[start_idx:end_idx] - force_baseline
-    time_seg = time[start_idx:end_idx]
+    length_seg = length_mm[start_idx_length:end_idx_length] - length_baseline
+    force_seg = force_mN[start_idx_length:end_idx_length] - force_baseline
+    time_seg = time[start_idx_length:end_idx_length]
 
     # Velocity (mm/s)
     velocity_mm_s = np.gradient(length_seg, time_seg)
@@ -293,16 +374,18 @@ def val_max_inst_power(file_path: str,
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = parsed["start_idx"]
-    end_idx = parsed["end_idx"]
+    # start_idx_force = parsed["start_idx_force"]
+    start_idx_length = parsed["start_idx_length"]
+    # end_idx_force = parsed["end_idx_force"]
+    end_idx_length = parsed["end_idx_length"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[0:start_idx]))
-    force_baseline = float(np.mean(force_mN[0:start_idx]))
+    length_baseline = float(np.mean(length_mm[0:start_idx_length-5]))  # small buffer 
+    force_baseline = float(np.mean(force_mN[0:start_idx_length-5]))
 
-    length_seg = length_mm[start_idx:end_idx] - length_baseline
-    force_seg = force_mN[start_idx:end_idx] - force_baseline
-    time_seg = time[start_idx:end_idx]
+    length_seg = length_mm[start_idx_length:end_idx_length] - length_baseline
+    force_seg = force_mN[start_idx_length:end_idx_length] - force_baseline
+    time_seg = time[start_idx_length:end_idx_length]
 
     # Velocity (mm/s)
     velocity_mm_s = np.gradient(length_seg, time_seg)
