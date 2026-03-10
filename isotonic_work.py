@@ -7,7 +7,7 @@ and return a figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.2"
+__version__ = "2.3"
 __email__ = "cy197@duke.edu"
 __date__ = "2026-03-10"
 
@@ -30,7 +30,7 @@ def natural_sort_key(s: str):
             for text in re.split(r"([0-9]+)", s)]
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
-                 bootstrap_s: float = 0.02, threshold_std: float = 4.0,
+                 bootstrap_s: float = 0.5, threshold_std: float = 4.0,
                  smooth_window_s: float = 0.02) -> int:
     """
     Detect the first sample where `signal` departs from its initial baseline.
@@ -67,7 +67,7 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
 
 
 def detect_offset(signal: np.ndarray, sample_freq_hz: float,
-                  bootstrap_s: float = 0.02, threshold_std: float = 4.0,
+                  bootstrap_s: float = 0.5, threshold_std: float = 4.0,
                   smooth_window_s: float = 0.02) -> int:
     """
     Detect the last sample where `signal` is still outside its initial baseline.
@@ -243,7 +243,7 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
         "end_idx_length":   end_idx_length,
     }
 
-def isotonic_work_from_file(file_path: str) -> float:
+def isotonic_work_from_file(file_path: str) -> Tuple[float, float]:
     """
     Compute the isotonic work for a single file.
 
@@ -252,10 +252,18 @@ def isotonic_work_from_file(file_path: str) -> float:
       - Detect contraction window automatically from force trace.
       - Use a pre-contraction middle segment as baseline.
       - Compute instantaneous power: P(t) = F(t) * v(t), converted to Watts.
-      - Compute isotonic work: W(t) = \int P(t) dt, converted to Joules. 
+      - Compute isotonic work: W(t) = \int P(t) dt, converted to Joules.
+
+    Returns
+    -------
+    (total_work, jump_threshold_used)
+      jump_threshold_used equals the default 0.025 for normal files.
+      If significant crossings were only found after lowering the threshold,
+      the reduced value is returned so it can be flagged in the CSV output.
     """
-    jump_threshold = 0.025
-    # remember to switch the other jump_threshold
+    DEFAULT_JUMP_THRESHOLD = 0.025
+    JUMP_THRESHOLD_FLOOR   = 0.001
+    JUMP_THRESHOLD_STEP    = 0.001
 
     parsed = parse_dmc_file(file_path)
     time = parsed["time"]
@@ -289,9 +297,24 @@ def isotonic_work_from_file(file_path: str) -> float:
     t_mid = (time_sliced[:-1] + time_sliced[1:]) / 2.0
     crossing_times = t_mid[crossing_idx]
 
-    # Find gaps between consecutive crossings
+    # Find gaps between consecutive crossings.
+    # If no significant gap is found at the default threshold, lower it
+    # incrementally. Files that required a reduced threshold are flagged
+    # in the CSV output as likely noise-only (e.g. unreasonably high load).
     gaps = np.diff(crossing_times)
+    jump_threshold = DEFAULT_JUMP_THRESHOLD
     significant = np.where(gaps > jump_threshold)[0]
+
+    while len(significant) == 0 and jump_threshold > JUMP_THRESHOLD_FLOOR:
+        jump_threshold = round(jump_threshold - JUMP_THRESHOLD_STEP, 10)
+        significant = np.where(gaps > jump_threshold)[0]
+
+    if len(significant) == 0:
+        raise ValueError(
+            f"{file_path}: no significant zero-crossing gap found even at "
+            f"jump_threshold={JUMP_THRESHOLD_FLOOR}s. Signal may be entirely noise "
+            f"or the contraction window was not captured."
+        )
 
     # Interval boundaries: from the crossing at significant[0]
     # to the crossing right after significant[-1]
@@ -307,10 +330,10 @@ def isotonic_work_from_file(file_path: str) -> float:
 
     total_work = float(np.trapezoid(inst_power_sliced[i_start:i_end], time_sliced[i_start:i_end]))
 
-    return total_work
+    return total_work, jump_threshold
 
 def run_isotonic_work(folder_path: str,
-                       mass_kg: float) -> List[List[float]]:
+                       mass_kg: float) -> Tuple[List[float], List[float]]:
     """
     Process one animal folder under `folder_path` and compute normalized
     isotonic work (J/kg) for each contraction.
@@ -324,10 +347,13 @@ def run_isotonic_work(folder_path: str,
 
     Returns
     -------
-    outputs : list[list[float]]
-        Normalized isotonic work (J/kg) for each contraction and animal.
+    (animal_results, thresholds_used)
+      animal_results  : normalized isotonic work (J/kg) per contraction
+      thresholds_used : jump_threshold used per file; values != 0.025 indicate
+                        likely noise-only files (e.g. unreasonably high load)
     """
-    animal_results: List[float] = []
+    animal_results:   List[float] = []
+    thresholds_used:  List[float] = []
 
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"Folder does not exist: {folder_path}")
@@ -342,11 +368,12 @@ def run_isotonic_work(folder_path: str,
 
         print(f"Processing {f} ...")
 
-        isotonic_work_J = isotonic_work_from_file(data_file)
-        normalized_isotonic_work = isotonic_work_J / mass_kg  # W/kg
+        isotonic_work_J, threshold_used = isotonic_work_from_file(data_file)
+        normalized_isotonic_work = isotonic_work_J / mass_kg  # J/kg
         animal_results.append(normalized_isotonic_work)
+        thresholds_used.append(threshold_used)
 
-    return animal_results
+    return animal_results, thresholds_used
 
 def val_isotonic_work(file_path: str,
                        i: float) -> plt:
@@ -556,17 +583,33 @@ def list_files(folder: str):
         key=natural_sort_key
     )
 
+if "csv_thresholds" not in st.session_state:
+    st.session_state.csv_thresholds = None
+if "csv_x_labels" not in st.session_state:
+    st.session_state.csv_x_labels = None
+
 if st.button("Run Analysis"):
     st.write("Calculating...")
 
     csv_output = []
+    csv_thresholds = []
+    csv_x_labels = []
+
     for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
         run_path = os.path.join(unzip_folder, foldername)
-        value = run_isotonic_work(run_path, mass_kg=mass_g[i] * 0.001)
-        csv_output.append(value)
+        results, thresholds = run_isotonic_work(run_path, mass_kg=mass_g[i] * 0.001)
+        csv_output.append(results)
+        csv_thresholds.append(thresholds)
+
+        csv_x_labels.append([])
+        for filename in sorted(os.listdir(run_path), key=natural_sort_key):
+            if filename.lower().endswith(".ddf"):
+                csv_x_labels[i].append(filename)
 
     # store results so they survive reruns
     st.session_state.csv_output = csv_output
+    st.session_state.csv_thresholds = csv_thresholds
+    st.session_state.csv_x_labels = csv_x_labels
     st.session_state.animal_folders = list_subfolders(unzip_folder)
 
     now = datetime.now()
@@ -574,7 +617,9 @@ if st.button("Run Analysis"):
     st.session_state.analysis_done = True
 
 if st.session_state.analysis_done:
-    csv_output = st.session_state.csv_output
+    csv_output     = st.session_state.csv_output
+    csv_thresholds = st.session_state.csv_thresholds
+    csv_x_labels   = st.session_state.csv_x_labels
     animal_folders = st.session_state.animal_folders or []
 
     # main plot
@@ -590,9 +635,21 @@ if st.session_state.analysis_done:
     ax.grid(True)
     st.pyplot(fig)
 
-    # download
-    df = pd.DataFrame(csv_output)
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    # download — third column flags files analyzed with a reduced jump_threshold
+    rows = []
+    for i in range(len(csv_x_labels)):
+        labels     = csv_x_labels[i]
+        values     = csv_output[i]
+        thresholds = csv_thresholds[i]
+
+        for fname, val, thr in zip(labels, values, thresholds):
+            flag = thr if thr != 0.025 else ""
+            rows.append([fname, val, flag])
+
+        rows.append(["", "", ""])  # blank line between runs
+
+    final_df = pd.DataFrame(rows, columns=["filename", "isotonic work (J/kg)", "jump_threshold_used"])
+    csv_bytes = final_df.to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Download CSV",
         data=csv_bytes,
