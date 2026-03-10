@@ -7,9 +7,9 @@ and return a figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.1"
+__version__ = "2.2"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-01-20"
+__date__ = "2026-03-10"
 
 import os
 import re
@@ -29,6 +29,82 @@ def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split(r"([0-9]+)", s)]
 
+def detect_onset(signal: np.ndarray, sample_freq_hz: float,
+                 bootstrap_s: float = 0.5, threshold_std: float = 4.0,
+                 smooth_window_s: float = 0.02) -> int:
+    """
+    Detect the first sample where `signal` departs from its initial baseline.
+
+    Parameters
+    ----------
+    signal          : 1D array (force or length)
+    sample_freq_hz  : sampling rate
+    bootstrap_s     : seconds at the very start used to estimate baseline
+    threshold_std   : number of baseline SDs required to declare onset
+    smooth_window_s : smoothing kernel width (seconds) to suppress noise
+
+    Returns
+    -------
+    onset index (int)
+    """
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    bootstrap = signal[:bootstrap_n]
+    baseline_mean = np.mean(bootstrap)
+    baseline_std  = np.std(bootstrap)
+
+    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
+
+    deviation = np.abs(smoothed - baseline_mean)
+    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+
+    if len(crossings) == 0:
+        raise ValueError(
+            "No onset detected — signal never exceeds threshold. "
+            "Try lowering threshold_std."
+        )
+    return int(crossings[0])
+
+
+def detect_offset(signal: np.ndarray, sample_freq_hz: float,
+                  bootstrap_s: float = 0.5, threshold_std: float = 4.0,
+                  smooth_window_s: float = 0.02) -> int:
+    """
+    Detect the last sample where `signal` is still outside its initial baseline.
+    Scans from the end of the array backward to find where the signal
+    re-enters the baseline band.
+
+    Parameters
+    ----------
+    signal          : 1D array (force or length)
+    sample_freq_hz  : sampling rate
+    bootstrap_s     : seconds at the very start used to estimate baseline
+    threshold_std   : number of baseline SDs required to declare offset
+    smooth_window_s : smoothing kernel width (seconds) to suppress noise
+
+    Returns
+    -------
+    offset index (int)
+    """
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    bootstrap = signal[:bootstrap_n]
+    baseline_mean = np.mean(bootstrap)
+    baseline_std  = np.std(bootstrap)
+
+    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
+
+    deviation = np.abs(smoothed - baseline_mean)
+    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+
+    if len(crossings) == 0:
+        raise ValueError(
+            "No offset detected — signal never exceeds threshold. "
+            "Try lowering threshold_std."
+        )
+    return int(crossings[-1])
+
+
 def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     """
     Parse a DMCv5.x-style data file.
@@ -41,12 +117,16 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     Returns
     -------
     dict with keys:
-      'time'        : time axis in seconds
-      'length_mm'   : muscle length in mm (using calibrated AI channel)
-      'force_mN'    : force in mN (using calibrated AI channel)
-      'raw_df'      : full pandas DataFrame of the test data
+      'time'             : time axis in seconds
+      'length_mm'        : muscle length in mm (using calibrated AI channel)
+      'force_mN'         : force in mN (using calibrated AI channel)
+      'raw_df'           : full pandas DataFrame of the test data
+      'start_idx_force'  : onset index detected from force signal
+      'start_idx_length' : onset index detected from length signal
+      'end_idx_force'    : offset index detected from force signal
+      'end_idx_length'   : offset index detected from length signal
     """
-    
+
     with open(file_path, "r", encoding="latin-1") as f:
         lines = f.readlines()
 
@@ -60,7 +140,6 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     offsets: List[float] = []
 
     i = 0
-    prot_skiprows = None  # row index where "Protocol Array" line occurs
 
     while i < len(lines):
         line = lines[i].strip()
@@ -74,48 +153,9 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
             i += 1
             continue
 
-        # Protocol Array start
-        if line.startswith("Protocol Array"):
-            prot_skiprows = i
-            i += 1
-            continue
-
-        # Locate data marker (end of protocol section)
+        # Locate data marker
         if line.startswith("Test Data in Volts"):
             data_marker_idx = i
-
-            if prot_skiprows is None:
-                raise ValueError(f'Found "Test Data in Volts" before "Protocol Array" in {file_path}')
-
-            # Assume protocol table begins on the next line after "Protocol Array"
-            protocol_start = prot_skiprows + 1
-            protocol_nrows = data_marker_idx - protocol_start
-            if protocol_nrows <= 0:
-                raise ValueError(f"No protocol rows found in {file_path}")
-
-            prot_df = pd.read_csv(
-                file_path,
-                delimiter="\t",
-                skiprows=protocol_start,
-                nrows=protocol_nrows,
-                engine="python",
-                header=None,
-            )
-
-            initial_baseline_end = None
-            for j in range(len(prot_df)):
-                if str(prot_df.iloc[j, 1]).strip() == "Stimulus-Tetanus":
-                    initial_baseline_end = 0.8*(float(prot_df.iloc[j, 0]) + 
-                                                float(prot_df.iloc[j, 3].split(",")[0].strip()))*sample_freq_hz
-                    print("(cy) initial baseline end")
-                    print(initial_baseline_end)
-
-                    final_baseline_start = 1.2*(float(prot_df.iloc[j, 0]) + 
-                                                float(prot_df.iloc[j, 3].split(",")[3].strip()))*sample_freq_hz
-                    print("(cy) final baseline start")
-                    print(final_baseline_start)
-                    break
-
             break
 
         # Calibration block
@@ -182,18 +222,25 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     force_mN = force_ref
 
     # Build time axis
-    # Sample column is an integer index; but we can compute time directly from index
     num_samples = len(df)
     sample_indices = np.arange(num_samples, dtype=float)
     time_s = sample_indices / sample_freq_hz
 
+    # Detect onset and offset from each signal independently
+    start_idx_force  = detect_onset(force_mN,  sample_freq_hz)
+    start_idx_length = detect_onset(length_mm, sample_freq_hz)
+    end_idx_force    = detect_offset(force_mN,  sample_freq_hz)
+    end_idx_length   = detect_offset(length_mm, sample_freq_hz)
+
     return {
-        "time": time_s,
-        "length_mm": length_mm,
-        "force_mN": force_mN,
-        "raw_df": df,
-        "start_idx": int(0.8*initial_baseline_end),
-        "end_idx": int(1.2*final_baseline_start)
+        "time":             time_s,
+        "length_mm":        length_mm,
+        "force_mN":         force_mN,
+        "raw_df":           df,
+        "start_idx_force":  start_idx_force,
+        "start_idx_length": start_idx_length,
+        "end_idx_force":    end_idx_force,
+        "end_idx_length":   end_idx_length,
     }
 
 def isotonic_work_from_file(file_path: str) -> float:
@@ -214,8 +261,8 @@ def isotonic_work_from_file(file_path: str) -> float:
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = parsed["start_idx"]
-    end_idx = parsed["end_idx"]
+    start_idx = min(parsed["start_idx_force"], parsed["start_idx_length"])
+    end_idx   = max(parsed["end_idx_force"],   parsed["end_idx_length"])
 
     # Baseline correction using the pre-contraction middle segment
     length_baseline = float(np.mean(length_mm[0:start_idx]))
@@ -321,8 +368,8 @@ def val_isotonic_work(file_path: str,
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = parsed["start_idx"]
-    end_idx = parsed["end_idx"]
+    start_idx = min(parsed["start_idx_force"], parsed["start_idx_length"])
+    end_idx   = max(parsed["end_idx_force"],   parsed["end_idx_length"])
 
     # Baseline correction using the pre-contraction middle segment
     length_baseline = float(np.mean(length_mm[0:start_idx]))
@@ -450,9 +497,41 @@ if uploaded_zip:
 
     mass_g: List[float] = []
 
-    for i, filename in enumerate(os.listdir(unzip_folder)):
-        value = st.number_input(f"{i} Mass (g):", min_value=0.0, value=1.0, step=0.00001) 
-        mass_g.append(value)
+    st.subheader("Animal Mass")
+    mass_mode = st.radio("Mass input mode", ["Manual Input", "Upload CSV"], horizontal=True)
+
+    if mass_mode == "Manual Input":
+        for i, foldername in enumerate(sorted_folder_names):
+            value = st.number_input(f"{foldername} Mass (g):", min_value=0.0, value=1.0, step=0.00001, key=f"mass_{i}")
+            mass_g.append(value)
+
+        mass_df = pd.DataFrame({
+            "folder": sorted_folder_names,
+            "mass_g": mass_g,
+        })
+        st.download_button(
+            label="Save mass data as CSV",
+            data=mass_df.to_csv(index=False).encode("utf-8"),
+            file_name="mass_data.csv",
+            mime="text/csv",
+        )
+
+    else:  # Upload CSV
+        mass_csv = st.file_uploader("Upload mass CSV", type="csv")
+        if mass_csv is not None:
+            uploaded_mass_df = pd.read_csv(mass_csv)
+            if set(["folder", "mass_g"]).issubset(uploaded_mass_df.columns):
+                uploaded_mass_df = uploaded_mass_df.set_index("folder")
+                missing = [f for f in sorted_folder_names if f not in uploaded_mass_df.index]
+                if missing:
+                    st.error(f"These folders have no mass entry in the uploaded CSV: {missing}")
+                else:
+                    for foldername in sorted_folder_names:
+                        mass_g.append(float(uploaded_mass_df.loc[foldername, "mass_g"]))
+                    st.success("Mass data loaded from CSV.")
+                    st.dataframe(uploaded_mass_df.loc[sorted_folder_names])
+            else:
+                st.error('CSV must have columns "folder" and "mass_g".')
 
 if "analysis_done" not in st.session_state:
     st.session_state.analysis_done = False
@@ -481,7 +560,7 @@ if st.button("Run Analysis"):
     st.write("Calculating...")
 
     csv_output = []
-    for i, foldername in enumerate(os.listdir(unzip_folder)):
+    for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
         run_path = os.path.join(unzip_folder, foldername)
         value = run_isotonic_work(run_path, mass_kg=mass_g[i] * 0.001)
         csv_output.append(value)
