@@ -276,12 +276,15 @@ def isotonic_work_from_file(file_path: str) -> Tuple[float, float]:
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = min(parsed["start_idx_force"], parsed["start_idx_length"])
-    end_idx   = max(parsed["end_idx_force"],   parsed["end_idx_length"])
+    start_idx = parsed["start_idx_length"]
+    end_idx   = parsed["end_idx_length"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[0:start_idx]))
-    force_baseline = float(np.mean(force_mN[0:start_idx]))
+    length_baseline = float(np.mean(length_mm[0:start_idx-5]))
+    force_baseline = float(np.mean(force_mN[0:start_idx-5]))
+
+    print("(cy) start, end index:")
+    print(start_idx, end_idx)
 
     length_seg = length_mm[start_idx:end_idx] - length_baseline
     force_seg = force_mN[start_idx:end_idx] - force_baseline
