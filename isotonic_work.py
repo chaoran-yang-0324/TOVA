@@ -58,6 +58,13 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     deviation = np.abs(smoothed - baseline_mean)
     crossings = np.where(deviation > threshold_std * baseline_std)[0]
 
+    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
+    print(f"  baseline_mean = {baseline_mean:.4f}")
+    print(f"  baseline_std  = {baseline_std:.6f}")
+    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
+    print(f"  max deviation = {float(np.max(deviation)):.6f}")
+    print(f"  bootstrap_n   = {bootstrap_n} samples")
+
     if len(crossings) == 0:
         raise ValueError(
             "No onset detected — signal never exceeds threshold. "
@@ -300,7 +307,7 @@ def isotonic_work_from_file(file_path: str) -> Tuple[float, float]:
     # Find gaps between consecutive crossings.
     # If no significant gap is found at the default threshold, lower it
     # incrementally. Files that required a reduced threshold are flagged
-    # in the CSV output as likely noise-only (e.g. unreasonably high load).
+    # in the CSV output as likely noise-only.
     gaps = np.diff(crossing_times)
     jump_threshold = DEFAULT_JUMP_THRESHOLD
     significant = np.where(gaps > jump_threshold)[0]
