@@ -10,7 +10,7 @@ power for each contraction, and return a figure plus the raw results.
  [y] add the option to save mass data
     add the option to upload mass data (from previous generation)
  [y] fix baseline_start detection 
- [] add units to the output CSV file
+ [y] add units to the output CSV file
 """
 
 __author__ = "Chaoran Yang"
@@ -21,16 +21,14 @@ __date__ = "2026-03-09"
 import os
 import re
 from typing import List, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 import streamlit as st
 import zipfile
 from datetime import datetime
-
 import random
+from pathlib import Path as PlPath
 
 def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
@@ -361,19 +359,21 @@ def val_max_inst_power(file_path: str,
     inst_power_sliced = inst_power_W[:min_idx + 1]
     max_power_W = float(np.max(inst_power_sliced))
     max_idx = np.argmax(inst_power_sliced)
+    
+    short_path = "/".join(PlPath(file_path).parts[-3:])
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time_seg[:min_idx + 1], length_seg[:min_idx + 1])
     ax_l.set_xlabel("Time (s)")
     ax_l.set_ylabel("Length (mm))")
-    ax_l.set_title(f"{file_path} (index {i}) Length")
+    ax_l.set_title(f"{short_path} (index {i}) Length")
     ax_l.grid(True)
 
     fig_f, ax_f = plt.subplots(figsize=(11, 8))
     ax_f.plot(time_seg[:min_idx + 1], force_seg[:min_idx + 1])
     ax_f.set_xlabel("Time (s)")
     ax_f.set_ylabel("Force (mN)")
-    ax_f.set_title(f"{file_path} (index {i}) Force")
+    ax_f.set_title(f"{short_path} (index {i}) Force")
     ax_f.grid(True)
 
     fig_p, ax_p = plt.subplots(figsize=(11, 8))
@@ -382,7 +382,7 @@ def val_max_inst_power(file_path: str,
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
     ax_p.legend()
-    ax_p.set_title(f"{file_path} (index {i}) Power")
+    ax_p.set_title(f"{short_path} (index {i}) Power")
     ax_p.grid(True)
 
     return fig_l, fig_f, fig_p
