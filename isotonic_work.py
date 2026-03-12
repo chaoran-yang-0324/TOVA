@@ -283,8 +283,8 @@ def isotonic_work_from_file(file_path: str) -> Tuple[float, float]:
     length_baseline = float(np.mean(length_mm[0:start_idx-5]))
     force_baseline = float(np.mean(force_mN[0:start_idx-5]))
 
-    print("(cy) start, end index:")
-    print(start_idx, end_idx)
+    # print("(cy) start, end index:")
+    # print(start_idx, end_idx)
 
     length_seg = length_mm[start_idx:end_idx] - length_baseline
     force_seg = force_mN[start_idx:end_idx] - force_baseline
@@ -398,19 +398,23 @@ def val_isotonic_work(file_path: str,
       - Compute instantaneous power: P(t) = F(t) * v(t), converted to Watts.
       - Compute isotonic work: W(t) = \int P(t) dt, converted to Joules. 
     """
-    jump_threshold = 0.025
-    # remember to switch the other jump_threshold
+    DEFAULT_JUMP_THRESHOLD = 0.025
+    JUMP_THRESHOLD_FLOOR   = 0.001
+    JUMP_THRESHOLD_STEP    = 0.001
 
     parsed = parse_dmc_file(file_path)
     time = parsed["time"]
     length_mm = parsed["length_mm"]
     force_mN = parsed["force_mN"]
-    start_idx = min(parsed["start_idx_force"], parsed["start_idx_length"])
-    end_idx   = max(parsed["end_idx_force"],   parsed["end_idx_length"])
+    start_idx = parsed["start_idx_length"]
+    end_idx   = parsed["end_idx_length"]
 
     # Baseline correction using the pre-contraction middle segment
-    length_baseline = float(np.mean(length_mm[0:start_idx]))
-    force_baseline = float(np.mean(force_mN[0:start_idx]))
+    length_baseline = float(np.mean(length_mm[0:start_idx-5]))
+    force_baseline = float(np.mean(force_mN[0:start_idx-5]))
+
+    # print("(cy) start, end index:")
+    # print(start_idx, end_idx)
 
     length_seg = length_mm[start_idx:end_idx] - length_baseline
     force_seg = force_mN[start_idx:end_idx] - force_baseline
@@ -423,7 +427,6 @@ def val_isotonic_work(file_path: str,
     inst_power_W = - 1e-6 * force_seg * velocity_mm_s
     min_idx = np.argmin(inst_power_W)
     inst_power_sliced = inst_power_W[:min_idx + 1]
-
     time_sliced = time_seg[:min_idx + 1]
 
     # Zero-crossings of power
@@ -434,9 +437,24 @@ def val_isotonic_work(file_path: str,
     t_mid = (time_sliced[:-1] + time_sliced[1:]) / 2.0
     crossing_times = t_mid[crossing_idx]
 
-    # Find gaps between consecutive crossings
+    # Find gaps between consecutive crossings.
+    # If no significant gap is found at the default threshold, lower it
+    # incrementally. Files that required a reduced threshold are flagged
+    # in the CSV output as likely noise-only.
     gaps = np.diff(crossing_times)
+    jump_threshold = DEFAULT_JUMP_THRESHOLD
     significant = np.where(gaps > jump_threshold)[0]
+
+    while len(significant) == 0 and jump_threshold > JUMP_THRESHOLD_FLOOR:
+        jump_threshold = round(jump_threshold - JUMP_THRESHOLD_STEP, 10)
+        significant = np.where(gaps > jump_threshold)[0]
+
+    if len(significant) == 0:
+        raise ValueError(
+            f"{file_path}: no significant zero-crossing gap found even at "
+            f"jump_threshold={JUMP_THRESHOLD_FLOOR}s. Signal may be entirely noise "
+            f"or the contraction window was not captured."
+        )
 
     # Interval boundaries: from the crossing at significant[0]
     # to the crossing right after significant[-1]
