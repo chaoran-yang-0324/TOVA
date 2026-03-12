@@ -487,7 +487,7 @@ def val_isotonic_work(file_path: str,
     ax_p.fill_between(time_sliced[i_start:i_end], inst_power_sliced[i_start:i_end], 0,
                       alpha=0.3, label="Integrated Work")
     ax_p.plot(time_sliced[i_start], inst_power_sliced[i_start], 'o', color='green', label="Start Point")
-    ax_p.plot(time_sliced[i_end], inst_power_sliced[i_end], 'o', color='red', label="End Point")
+    ax_p.plot(time_sliced[i_end], inst_power_sliced[i_end], 'o', color='brown', label="End Point")
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
     ax_p.legend()
