@@ -58,12 +58,12 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     deviation = np.abs(smoothed - baseline_mean)
     crossings = np.where(deviation > threshold_std * baseline_std)[0]
 
-    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
-    print(f"  baseline_mean = {baseline_mean:.4f}")
-    print(f"  baseline_std  = {baseline_std:.6f}")
-    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
-    print(f"  max deviation = {float(np.max(deviation)):.6f}")
-    print(f"  bootstrap_n   = {bootstrap_n} samples")
+    # print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
+    # print(f"  baseline_mean = {baseline_mean:.4f}")
+    # print(f"  baseline_std  = {baseline_std:.6f}")
+    # print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
+    # print(f"  max deviation = {float(np.max(deviation)):.6f}")
+    # print(f"  bootstrap_n   = {bootstrap_n} samples")
 
     if len(crossings) == 0:
         raise ValueError(
@@ -468,7 +468,7 @@ def val_isotonic_work(file_path: str,
     i_start = max(0, min(i_start, len(time_sliced) - 1))
     i_end = max(i_start + 1, min(i_end, len(time_sliced)))
 
-    short_path = "/".join(file_path.parts[-3:])
+    short_path = "/".join(zipfile.Path(file_path).parts[-3:])
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time_seg[:min_idx + 1], length_seg[:min_idx + 1])
