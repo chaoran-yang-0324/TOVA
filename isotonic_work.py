@@ -468,28 +468,32 @@ def val_isotonic_work(file_path: str,
     i_start = max(0, min(i_start, len(time_sliced) - 1))
     i_end = max(i_start + 1, min(i_end, len(time_sliced)))
 
+    short_path = "/".join(file_path.parts[-3:])
+
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time_seg[:min_idx + 1], length_seg[:min_idx + 1])
     ax_l.set_xlabel("Time (s)")
     ax_l.set_ylabel("Length (mm))")
-    ax_l.set_title(f"{file_path} (index {i}) Length")
+    ax_l.set_title(f"{short_path} (index {i}) Length")
     ax_l.grid(True)
 
     fig_f, ax_f = plt.subplots(figsize=(11, 8))
     ax_f.plot(time_seg[:min_idx + 1], force_seg[:min_idx + 1])
     ax_f.set_xlabel("Time (s)")
     ax_f.set_ylabel("Force (mN)")
-    ax_f.set_title(f"{file_path} (index {i}) Force")
+    ax_f.set_title(f"{short_path} (index {i}) Force")
     ax_f.grid(True)
 
     fig_p, ax_p = plt.subplots(figsize=(11, 8))
     ax_p.plot(time_seg[:min_idx + 1], inst_power_W[:min_idx + 1], label="Power")
-    ax_p.fill_between(time_sliced[i_start:i_end], inst_power_sliced[i_start:i_end], 0, # baseline is y = 0
+    ax_p.fill_between(time_sliced[i_start:i_end], inst_power_sliced[i_start:i_end], 0,
                       alpha=0.3, label="Integrated Work")
+    ax_p.plot(time_sliced[i_start], inst_power_sliced[i_start], 'o', color='green', label="Start Point")
+    ax_p.plot(time_sliced[i_end], inst_power_sliced[i_end], 'o', color='red', label="End Point")
     ax_p.set_xlabel("Time (s)")
     ax_p.set_ylabel("Power (W)")
     ax_p.legend()
-    ax_p.set_title(f"{file_path} (index {i}) Power")
+    ax_p.set_title(f"{short_path} (index {i}) Power")
     ax_p.grid(True)
 
     return fig_l, fig_f, fig_p
