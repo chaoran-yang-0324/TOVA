@@ -14,16 +14,14 @@ __date__ = "2026-03-10"
 import os
 import re
 from typing import List, Tuple
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 import streamlit as st
 import zipfile
 from datetime import datetime
-
 import random
+from pathlib import Path as PlPath
 
 def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
@@ -468,7 +466,7 @@ def val_isotonic_work(file_path: str,
     i_start = max(0, min(i_start, len(time_sliced) - 1))
     i_end = max(i_start + 1, min(i_end, len(time_sliced)))
 
-    short_path = "/".join(zipfile.Path(file_path).parts[-3:])
+    short_path = "/".join(PlPath(file_path).parts[-3:])
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time_seg[:min_idx + 1], length_seg[:min_idx + 1])
