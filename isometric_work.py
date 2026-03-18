@@ -7,9 +7,9 @@ figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.2"
+__version__ = "2.3"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-03-13"
+__date__ = "2026-03-18"
 
 import os
 import re
@@ -58,12 +58,12 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     deviation = np.abs(smoothed - baseline_mean)
     crossings = np.where(deviation > threshold_std * baseline_std)[0]
 
-    # print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
-    # print(f"  baseline_mean = {baseline_mean:.4f}")
-    # print(f"  baseline_std  = {baseline_std:.6f}")
-    # print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
-    # print(f"  max deviation = {float(np.max(deviation)):.6f}")
-    # print(f"  bootstrap_n   = {bootstrap_n} samples")
+    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
+    print(f"  baseline_mean = {baseline_mean:.4f}")
+    print(f"  baseline_std  = {baseline_std:.6f}")
+    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
+    print(f"  max deviation = {float(np.max(deviation)):.6f}")
+    print(f"  bootstrap_n   = {bootstrap_n} samples")
 
     if len(crossings) == 0:
         raise ValueError(
@@ -125,7 +125,7 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
             popt, _ = curve_fit(
                 exp_decay, x_boot_rel, y_boot,
                 p0=[A0, lam0, C0],
-                bounds=([0, 0, -np.inf], [np.inf, np.inf, np.inf]),
+                bounds=([-np.inf, 0, -np.inf], [np.inf, np.inf, np.inf]),
                 maxfev=10_000
             )
     except (RuntimeError, OptimizeWarning) as e:
