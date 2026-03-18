@@ -107,7 +107,7 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     # then evaluate the same relative offsets over the full signal.
     x_boot_rel = np.arange(bootstrap_n, dtype=float)
     y_boot     = signal[boot_start:]
-    x_full_rel = np.arange(boot_start, N, dtype=float) - boot_start  # same origin
+    x_full_rel = np.arange(N, dtype=float) - boot_start  
 
     kernel   = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
