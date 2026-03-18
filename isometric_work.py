@@ -72,7 +72,7 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
 
 def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
                          bootstrap_s: float = 0.08, threshold_std: float = 4.0,
-                         smooth_window_s: float = 0.02,
+                         smooth_window_s: float = 0.08,
                          file_path: str = "") -> int:
     """
     Detect the start of the plateau by scanning backwards from the end of
