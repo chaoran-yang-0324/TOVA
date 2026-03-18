@@ -22,6 +22,8 @@ import zipfile
 from datetime import datetime
 import random
 from pathlib import Path as PlPath
+from scipy.optimize import curve_fit, OptimizeWarning
+import warnings
 
 def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
@@ -101,17 +103,42 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     bootstrap_n = int(bootstrap_s * sample_freq_hz)
     boot_start  = N - bootstrap_n
 
-    x_boot = np.arange(boot_start, N, dtype=float)
-    y_boot = signal[boot_start:]
-    x_full = np.arange(N, dtype=float)
+    # Use zero-based x inside the fitter for numerical stability,
+    # then evaluate the same relative offsets over the full signal.
+    x_boot_rel = np.arange(bootstrap_n, dtype=float)
+    y_boot     = signal[boot_start:]
+    x_full_rel = np.arange(boot_start, N, dtype=float) - boot_start  # same origin
 
     kernel   = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
 
-    # Fit quadratic to bootstrap region, evaluate over full signal
-    coeffs       = np.polyfit(x_boot, y_boot, 2)
-    fitted_boot  = np.polyval(coeffs, x_boot)
-    fitted_full  = np.polyval(coeffs, x_full)
+    def exp_decay(x, A, lam, C):
+        return A * np.exp(-lam * x) + C
+
+    A0   = float(np.max(y_boot) - np.min(y_boot))   # rough overshoot amplitude
+    C0   = float(np.min(y_boot))                     # asymptotic floor
+    lam0 = 1.0 / bootstrap_n                         # decays over ~bootstrap window
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", OptimizeWarning)
+            popt, _ = curve_fit(
+                exp_decay, x_boot_rel, y_boot,
+                p0=[A0, lam0, C0],
+                bounds=([0, 0, -np.inf], [np.inf, np.inf, np.inf]),
+                maxfev=10_000
+            )
+    except (RuntimeError, OptimizeWarning) as e:
+        raise RuntimeError(
+            f"{file_path}: exponential fit failed in detect_plateau_onset. "
+            f"Consider adjusting bootstrap_s or inspecting the tail region. "
+            f"Original error: {e}"
+        )
+
+    A_fit, lam_fit, C_fit = popt
+
+    fitted_boot = exp_decay(x_boot_rel, *popt)
+    fitted_full = exp_decay(x_full_rel, *popt)
 
     # Band: curve-relative, using residual spread in bootstrap region
     residual_std = np.std(y_boot - fitted_boot)
@@ -120,8 +147,11 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     # Last sample still below the plateau band = end of the rise
     below = np.where(smoothed < lower_band)[0]
 
-    print(f"[detect_plateau_onset] {file_path}") 
-    print(f"  coeffs        = {coeffs}")
+    print(f"[detect_plateau_onset] {file_path}")
+    print(f"  curve_type    = exponential decay (A·exp(–λx) + C)")
+    print(f"  A             = {A_fit:.6f}")
+    print(f"  λ             = {lam_fit:.6f}")
+    print(f"  C             = {C_fit:.6f}")
     print(f"  residual_std  = {residual_std:.6f}")
     print(f"  threshold     = {threshold_std} × residual_std = {threshold_std * residual_std:.6f}")
     print(f"  bootstrap_n   = {bootstrap_n} samples")
@@ -129,10 +159,11 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     if len(below) == 0:
         raise ValueError(
             f"{file_path}: detect_plateau_onset found no samples below the plateau band. "
+            f"A={A_fit:.6f}, λ={lam_fit:.6f}, C={C_fit:.6f}, "
             f"residual_std={residual_std:.6f}, "
             f"min(smoothed)={float(np.min(smoothed)):.4f}, "
             f"min(lower_band)={float(np.min(lower_band)):.4f}. "
-            f"Try increasing threshold_std or checking bootstrap_s."
+            f"Try increasing threshold_std or bootstrap_s."
         )
 
     return int(below[-1])
