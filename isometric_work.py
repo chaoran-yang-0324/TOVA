@@ -77,18 +77,18 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     """
     Detect the start of the plateau by scanning backwards from the end of
     the recording. The plateau onset is defined as the last sample where
-    the signal is still below the plateau band — equivalently, the first
-    sample of sustained plateau from the right.
+    the signal is below the plateau band.
 
-    Assumes the recording ends in the plateau region, which is used to
-    bootstrap plateau_mean and plateau_std.
+    This function fits the bootstrap region to a quadratic curve to accommodate 
+    a concave-downward plateau shape. The lower band is then curve_fit(x) - N*residual_std
+    evaluated at every sample, rather than a fixed horizontal threshold.
 
     Parameters
     ----------
     signal          : 1D array (force)
     sample_freq_hz  : sampling rate
-    bootstrap_s     : seconds at the very end used to estimate plateau
-    threshold_std   : number of plateau SDs below plateau_mean that defines
+    bootstrap_s     : seconds at the very end used to estimate the plateau curve
+    threshold_std   : number of residual SDs below the fitted curve defining
                       the lower edge of the plateau band
     smooth_window_s : smoothing kernel width (seconds) to suppress noise
     file_path       : included in error messages for traceability
@@ -97,32 +97,42 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     -------
     plateau onset index (int)
     """
-    bootstrap_n  = int(bootstrap_s * sample_freq_hz)
-    tail         = signal[-bootstrap_n:]
-    plateau_mean = np.mean(tail)
-    plateau_std  = np.std(tail)
+    N           = len(signal)
+    bootstrap_n = int(bootstrap_s * sample_freq_hz)
+    boot_start  = N - bootstrap_n
+
+    x_boot = np.arange(boot_start, N, dtype=float)
+    y_boot = signal[boot_start:]
+    x_full = np.arange(N, dtype=float)
 
     kernel   = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
 
-    lower_band = plateau_mean - threshold_std * plateau_std
+    # Fit quadratic to bootstrap region, evaluate over full signal
+    coeffs       = np.polyfit(x_boot, y_boot, 2)
+    fitted_boot  = np.polyval(coeffs, x_boot)
+    fitted_full  = np.polyval(coeffs, x_full)
+
+    # Band: curve-relative, using residual spread in bootstrap region
+    residual_std = np.std(y_boot - fitted_boot)
+    lower_band   = fitted_full - threshold_std * residual_std
 
     # Last sample still below the plateau band = end of the rise
     below = np.where(smoothed < lower_band)[0]
 
-    print(f"[detect_plateau_onset] {file_path if 'file_path' in dir() else ''}")
-    print(f"  plateau_mean = {plateau_mean:.4f}")
-    print(f"  plateau_std  = {plateau_std:.6f}")
-    print(f"  threshold     = {threshold_std} × std = {threshold_std * plateau_std:.6f}")
+    print(f"[detect_plateau_onset] {file_path}") 
+    print(f"  coeffs        = {coeffs}")
+    print(f"  residual_std  = {residual_std:.6f}")
+    print(f"  threshold     = {threshold_std} × residual_std = {threshold_std * residual_std:.6f}")
     print(f"  bootstrap_n   = {bootstrap_n} samples")
 
     if len(below) == 0:
         raise ValueError(
             f"{file_path}: detect_plateau_onset found no samples below the plateau band. "
-            f"plateau_mean={plateau_mean:.4f}, plateau_std={plateau_std:.6f}, "
-            f"lower_band={lower_band:.4f}, "
-            f"min smoothed value={float(np.min(smoothed)):.4f}. "
-            f"Try increasing threshold_std."
+            f"residual_std={residual_std:.6f}, "
+            f"min(smoothed)={float(np.min(smoothed)):.4f}, "
+            f"min(lower_band)={float(np.min(lower_band)):.4f}. "
+            f"Try increasing threshold_std or checking bootstrap_s."
         )
 
     return int(below[-1])
