@@ -49,6 +49,7 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     """
     bootstrap_n = int(bootstrap_s * sample_freq_hz)
     bootstrap = signal[:bootstrap_n]
+    print("(cy 03/18) bootstrap =",bootstrap)
     baseline_mean = np.mean(bootstrap)
     baseline_std  = np.std(bootstrap)
 
@@ -324,6 +325,8 @@ def isometric_work_from_file(file_path: str) -> float:
     force_mN      = parsed["force_mN"]
     start_idx     = parsed["start_idx"]
     end_idx       = parsed["end_idx"]
+
+    print("(cy) start_idx =", start_idx)
 
     # Baseline from pre-contraction region
     force_baseline = float(np.mean(force_mN[:start_idx]))
