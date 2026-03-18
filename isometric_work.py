@@ -251,6 +251,7 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     # Detect onset and offset from each signal independently
     start_idx = detect_onset(force_mN,  sample_freq_hz)
     end_idx_force = int(start_idx + np.argmin(length_mm[start_idx:]))
+    print("end_idx_force =",end_idx_force)
     end_idx = detect_plateau_onset(force_mN[:end_idx_force], sample_freq_hz, file_path=file_path)
 
     return {
