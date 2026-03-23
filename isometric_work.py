@@ -327,6 +327,7 @@ def isometric_work_from_file(file_path: str) -> float:
     end_idx       = parsed["end_idx"]
 
     print("(cy) start_idx =", start_idx)
+    print("(cy) end_idx   =", end_idx)
 
     # Baseline from pre-contraction region
     force_baseline = float(np.mean(force_mN[:start_idx]))
@@ -512,7 +513,6 @@ if st.button("Run Analysis"):
     csv_x_labels = []
 
     for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
-        print("(cy) Processing")
         run_path = os.path.join(unzip_folder, foldername)
         results  = run_isometric_work(run_path, csa_mm2=csa_mm2_list[i])
         csv_output.append(results)
