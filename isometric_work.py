@@ -59,18 +59,18 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     deviation = np.abs(smoothed - baseline_mean)
     crossings = np.where(deviation > threshold_std * baseline_std)[0]
 
-    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
-    print(f"  baseline_mean = {baseline_mean:.4f}")
-    print(f"  baseline_std  = {baseline_std:.6f}")
-    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
-    print(f"  max deviation = {float(np.max(deviation)):.6f}")
-    print(f"  bootstrap_n   = {bootstrap_n} samples")
-
     if len(crossings) == 0:
         raise ValueError(
             "No onset detected — signal never exceeds threshold. "
             "Try lowering threshold_std."
         )
+
+    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
+    print(f"  baseline_mean = {baseline_mean:.4f}")
+    print(f"  baseline_std  = {baseline_std:.6f}")
+    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
+    print(f"  start_idx = {int(crossings[0])}")
+
     return int(crossings[0])
 
 def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
@@ -148,15 +148,6 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
     # Last sample still below the plateau band = end of the rise
     below = np.where(smoothed < lower_band)[0]
 
-    print(f"[detect_plateau_onset] {file_path}")
-    print(f"  curve_type    = exponential decay (A·exp(–λx) + C)")
-    print(f"  A             = {A_fit:.6f}")
-    print(f"  λ             = {lam_fit:.6f}")
-    print(f"  C             = {C_fit:.6f}")
-    print(f"  residual_std  = {residual_std:.6f}")
-    print(f"  threshold     = {threshold_std} × residual_std = {threshold_std * residual_std:.6f}")
-    print(f"  bootstrap_n   = {bootstrap_n} samples")
-
     if len(below) == 0:
         raise ValueError(
             f"{file_path}: detect_plateau_onset found no samples below the plateau band. "
@@ -166,6 +157,15 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
             f"min(lower_band)={float(np.min(lower_band)):.4f}. "
             f"Try increasing threshold_std or bootstrap_s."
         )
+
+    print(f"[detect_plateau_onset] {file_path}")
+    print(f"  curve_type    = exponential decay (A·exp(–λx) + C)")
+    print(f"  A             = {A_fit:.6f}")
+    print(f"  λ             = {lam_fit:.6f}")
+    print(f"  C             = {C_fit:.6f}")
+    print(f"  residual_std  = {residual_std:.6f}")
+    print(f"  threshold     = {threshold_std} × residual_std = {threshold_std * residual_std:.6f}")
+    print(f"  end_idx = {int(below[-1])}")
 
     return int(below[-1])
 
@@ -325,9 +325,6 @@ def isometric_work_from_file(file_path: str) -> float:
     force_mN      = parsed["force_mN"]
     start_idx     = parsed["start_idx"]
     end_idx       = parsed["end_idx"]
-
-    print("(cy) start_idx =", start_idx)
-    print("(cy) end_idx   =", end_idx)
 
     # Baseline from pre-contraction region
     force_baseline = float(np.mean(force_mN[:start_idx]))
