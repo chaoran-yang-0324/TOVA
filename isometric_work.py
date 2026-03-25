@@ -30,7 +30,7 @@ def natural_sort_key(s: str):
             for text in re.split(r"([0-9]+)", s)]
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
-                 bootstrap_s: float = 0.08, threshold_std: float = 4.0,
+                 bootstrap_s: float = 0.08, threshold_std: float = 6.0,
                  smooth_window_s: float = 0.02) -> int:
     """
     Detect the first sample where `signal` departs from its initial baseline.
@@ -74,7 +74,7 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     return int(crossings[0])
 
 def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
-                         bootstrap_s: float = 0.08, threshold_std: float = 4.0,
+                         bootstrap_s: float = 0.05, threshold_std: float = 6.0,
                          smooth_window_s: float = 0.02,
                          file_path: str = "") -> int:
     """
