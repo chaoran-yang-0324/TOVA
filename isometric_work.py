@@ -31,7 +31,8 @@ def natural_sort_key(s: str):
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
                  bootstrap_s: float = 0.08, threshold_std: float = 6.0,
-                 smooth_window_s: float = 0.02, sustained_s: float = 0.005) -> int:
+                 smooth_window_s: float = 0.02, 
+                 min_std_fraction: float = 0.005, sustained_s: float = 0.005) -> int:
     """
     Detect the first sample where `signal` departs from its initial baseline.
 
@@ -42,6 +43,9 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     bootstrap_s     : seconds at the very start used to estimate baseline
     threshold_std   : number of baseline SDs required to declare onset
     smooth_window_s : smoothing kernel width (seconds) to suppress noise
+    min_std_fraction: noise floor — baseline_std is clamped to at least this
+                      fraction of |baseline_mean|. Prevents the threshold from
+                      collapsing to near-zero on ultra-quiet baselines.
     sustained_s     : seconds the signal must stay above threshold
                       continuously before an onset is declared.
                       Filters out single-sample spikes.
@@ -54,6 +58,9 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     bootstrap = signal[:bootstrap_n]
     baseline_mean = np.mean(bootstrap)
     baseline_std  = np.std(bootstrap)
+
+    std_floor    = min_std_fraction * abs(baseline_mean) if baseline_mean != 0 else 1e-9
+    baseline_std = max(baseline_std, std_floor)
 
     kernel = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
