@@ -7,9 +7,9 @@ figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.3"
+__version__ = "2.4"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-03-18"
+__date__ = "2026-03-28"
 
 import os
 import re
@@ -31,7 +31,7 @@ def natural_sort_key(s: str):
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
                  bootstrap_s: float = 0.08, threshold_std: float = 6.0,
-                 smooth_window_s: float = 0.02) -> int:
+                 smooth_window_s: float = 0.02, sustained_s: float = 0.005) -> int:
     """
     Detect the first sample where `signal` departs from its initial baseline.
 
@@ -42,6 +42,9 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     bootstrap_s     : seconds at the very start used to estimate baseline
     threshold_std   : number of baseline SDs required to declare onset
     smooth_window_s : smoothing kernel width (seconds) to suppress noise
+    sustained_s     : seconds the signal must stay above threshold
+                      continuously before an onset is declared.
+                      Filters out single-sample spikes.
 
     Returns
     -------
@@ -49,7 +52,6 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     """
     bootstrap_n = int(bootstrap_s * sample_freq_hz)
     bootstrap = signal[:bootstrap_n]
-    print("(cy 03/18) bootstrap =",bootstrap)
     baseline_mean = np.mean(bootstrap)
     baseline_std  = np.std(bootstrap)
 
@@ -57,9 +59,22 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
 
     deviation = np.abs(smoothed - baseline_mean)
-    crossings = np.where(deviation > threshold_std * baseline_std)[0]
+    threshold = threshold_std * baseline_std
+    above      = deviation > threshold
 
-    if len(crossings) == 0:
+    sustained_n = max(1, int(sustained_s * sample_freq_hz))
+    onset_idx   = None
+    count       = 0
+    for i, flag in enumerate(above):
+        if flag:
+            count += 1
+            if count >= sustained_n:
+                onset_idx = i - sustained_n + 1   # back to where run started
+                break
+        else:
+            count = 0
+
+    if onset_idx is None:
         raise ValueError(
             "No onset detected — signal never exceeds threshold. "
             "Try lowering threshold_std."
@@ -69,9 +84,9 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     print(f"  baseline_mean = {baseline_mean:.4f}")
     print(f"  baseline_std  = {baseline_std:.6f}")
     print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
-    print(f"  start_idx = {int(crossings[0])}")
+    print(f"  start_idx = {int(onset_idx)}")
 
-    return int(crossings[0])
+    return int(onset_idx)
 
 def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
                          bootstrap_s: float = 0.05, threshold_std: float = 6.0,
@@ -293,7 +308,6 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     # Detect onset and offset from each signal independently
     start_idx = detect_onset(force_mN,  sample_freq_hz)
     end_idx_force = int(start_idx + np.argmin(length_mm[start_idx:]))
-    print("end_idx_force =",end_idx_force)
     end_idx = detect_plateau_onset(force_mN[:end_idx_force], sample_freq_hz, file_path=file_path)
 
     return {
