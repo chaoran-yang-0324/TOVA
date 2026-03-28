@@ -81,12 +81,6 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
         else:
             count = 0
 
-    if onset_idx is None:
-        raise ValueError(
-            "No onset detected — signal never exceeds threshold. "
-            "Try lowering threshold_std."
-        )
-
     print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
     print(f"  baseline_mean = {baseline_mean:.4f}")
     print(f"  baseline_std  = {baseline_std:.6f}")
@@ -169,16 +163,6 @@ def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
 
     # Last sample still below the plateau band = end of the rise
     below = np.where(smoothed < lower_band)[0]
-
-    if len(below) == 0:
-        raise ValueError(
-            f"{file_path}: detect_plateau_onset found no samples below the plateau band. "
-            f"A={A_fit:.6f}, λ={lam_fit:.6f}, C={C_fit:.6f}, "
-            f"residual_std={residual_std:.6f}, "
-            f"min(smoothed)={float(np.min(smoothed)):.4f}, "
-            f"min(lower_band)={float(np.min(lower_band)):.4f}. "
-            f"Try increasing threshold_std or bootstrap_s."
-        )
 
     print(f"[detect_plateau_onset] {file_path}")
     print(f"  curve_type    = exponential decay (A·exp(–λx) + C)")
@@ -406,19 +390,17 @@ def val_isometric_work(file_path: str, i: int):
     end_plateau = parsed["end_plateau"]
 
     force_baseline = float(np.mean(force_mN[:start_idx]))
-    force_seg = force_mN[start_idx:end_idx + 1] - force_baseline
-    time_seg  = time[start_idx:end_idx + 1]
 
     short_path = "/".join(PlPath(file_path).parts[-3:])
 
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
     ax_l.plot(time[:end_plateau + 1], force_mN[:end_plateau + 1])
-    ax_l.fill_between(time[start_idx:end_idx], force_mN[start_idx:end_idx], 0,
+    ax_l.fill_between(time[start_idx:end_idx + 1], force_mN[start_idx:end_idx + 1], force_baseline,
                       alpha=0.3, label="Integrated Work")
     ax_l.plot(time[start_idx], force_mN[start_idx], 'o', color='green', label="Start Point")
     ax_l.plot(time[end_idx], force_mN[end_idx], 'o', color='brown', label="End Point")
     ax_l.set_xlabel("Time (s)")
-    ax_l.set_ylabel("Force (mN))")
+    ax_l.set_ylabel("Force (mN)")
     ax_l.set_title(f"{short_path} (index {i})")
     ax_l.grid(True)
 
