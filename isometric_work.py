@@ -7,7 +7,7 @@ figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.4"
+__version__ = "2.5"
 __email__ = "cy197@duke.edu"
 __date__ = "2026-03-28"
 
@@ -22,7 +22,6 @@ import zipfile
 from datetime import datetime
 import random
 from pathlib import Path as PlPath
-from scipy.optimize import curve_fit, OptimizeWarning
 import warnings
 
 def natural_sort_key(s: str):
@@ -31,10 +30,18 @@ def natural_sort_key(s: str):
 
 def detect_onset(signal: np.ndarray, sample_freq_hz: float,
                  bootstrap_s: float = 0.08, threshold_std: float = 6.0,
-                 smooth_window_s: float = 0.02, 
-                 min_std_fraction: float = 0.005, sustained_s: float = 0.005) -> int:
+                 smooth_window_s: float = 0.02,
+                 min_std_fraction: float = 0.005, sustained_s: float = 0.005,
+                 file_path: str = "") -> Tuple[int, float]:
     """
-    Detect the first sample where `signal` departs from its initial baseline.
+    Detect the first sample where `signal` departs from its initial baseline,
+    and return the interpolated time of the last baseline crossing before the rise.
+
+    The onset index confirms the rise is real (sustained threshold criterion).
+    The crossing time is found by walking backward from the onset index along the
+    smoothed signal until it falls to or below baseline_mean, then linearly
+    interpolating the exact crossing moment. This guarantees the integration
+    region always starts at (force - baseline) = 0.
 
     Parameters
     ----------
@@ -48,11 +55,14 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
                       collapsing to near-zero on ultra-quiet baselines.
     sustained_s     : seconds the signal must stay above threshold
                       continuously before an onset is declared.
-                      Filters out single-sample spikes.
+    file_path       : included in log messages for traceability
 
     Returns
     -------
-    onset index (int)
+    (onset_idx, crossing_time_s)
+      onset_idx       : integer index of first confirmed above-threshold sample
+      crossing_time_s : interpolated time (s) where the smoothed signal last
+                        crossed baseline_mean — use as the integration start
     """
     bootstrap_n = int(bootstrap_s * sample_freq_hz)
     bootstrap = signal[:bootstrap_n]
@@ -62,12 +72,12 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
     std_floor    = min_std_fraction * abs(baseline_mean) if baseline_mean != 0 else 1e-9
     baseline_std = max(baseline_std, std_floor)
 
-    kernel = max(1, int(smooth_window_s * sample_freq_hz))
+    kernel   = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
 
     deviation = np.abs(smoothed - baseline_mean)
     threshold = threshold_std * baseline_std
-    above      = deviation > threshold
+    above     = deviation > threshold
 
     sustained_n = max(1, int(sustained_s * sample_freq_hz))
     onset_idx   = None
@@ -81,99 +91,153 @@ def detect_onset(signal: np.ndarray, sample_freq_hz: float,
         else:
             count = 0
 
-    print(f"[detect_onset] {file_path if 'file_path' in dir() else ''}")
-    print(f"  baseline_mean = {baseline_mean:.4f}")
-    print(f"  baseline_std  = {baseline_std:.6f}")
-    print(f"  threshold     = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
-    print(f"  start_idx = {int(onset_idx)}")
+    if onset_idx is None:
+        onset_idx = 0
 
-    return int(onset_idx)
+    # Walk backward from onset_idx along the smoothed signal to find the last
+    # sample that is at or below baseline_mean — this is the end of the flat
+    # baseline just before the rise begins.
+    j = onset_idx
+    while j > 0 and smoothed[j] > baseline_mean:
+        j -= 1
 
-def detect_plateau_onset(signal: np.ndarray, sample_freq_hz: float,
-                         bootstrap_s: float = 0.05, threshold_std: float = 6.0,
-                         smooth_window_s: float = 0.02,
-                         file_path: str = "") -> int:
+    # Linearly interpolate the exact crossing moment between sample j and j+1.
+    s0 = smoothed[j]
+    s1 = smoothed[min(j + 1, len(smoothed) - 1)]
+    if s1 > s0:
+        frac = float(np.clip((baseline_mean - s0) / (s1 - s0), 0.0, 1.0))
+    else:
+        frac = 0.0
+    crossing_time = (j + frac) / sample_freq_hz
+
+    print(f"[detect_onset] {file_path}")
+    print(f"  baseline_mean    = {baseline_mean:.4f}")
+    print(f"  baseline_std     = {baseline_std:.6f}")
+    print(f"  threshold        = {threshold_std} × std = {threshold_std * baseline_std:.6f}")
+    print(f"  onset_idx        = {onset_idx}")
+    print(f"  crossing_time_s  = {crossing_time:.6f}  (interpolated baseline crossing)")
+
+    return int(onset_idx), float(crossing_time)
+
+
+def detect_rise_end(signal: np.ndarray, sample_freq_hz: float,
+                    onset_idx: int,
+                    smooth_window_s: float = 0.015,
+                    deriv_drop_fraction: float = 0.10,
+                    sustained_s: float = 0.005,
+                    plateau_fraction: float = 0.97,
+                    file_path: str = "") -> int:
     """
-    Detect the start of the plateau by scanning backwards from the end of
-    the recording. The plateau onset is defined as the last sample where
-    the signal is below the plateau band.
+    Detect where the force rise phase ends — the transition from rapid increase
+    to plateau or steady state — without assuming the plateau is flat.
 
-    This function fits the bootstrap region to a quadratic curve to accommodate 
-    a concave-downward plateau shape. The lower band is then curve_fit(x) - N*residual_std
-    evaluated at every sample, rather than a fixed horizontal threshold.
+    Two-stage strategy
+    ------------------
+    Stage 1 — Derivative drop (handles overshoot and clean plateau cases):
+        Compute the smoothed first derivative of force.  Find the steepest
+        point of the rise (peak df/dt).  After that peak, find the first
+        moment the derivative falls to ≤ deriv_drop_fraction of its maximum
+        and stays there for sustained_s seconds.
+        • Overshoot case: df/dt crosses zero at the force peak → detected
+          almost immediately.
+        • Clean/gradual rise: df/dt asymptotes to near-zero → detected when
+          force rate of change becomes negligible.
+
+    Stage 2 — Plateau-fraction fallback (handles still-rising or very
+        slowly settling signals where the derivative never clearly drops):
+        Estimate the plateau from the tail of the signal and find where
+        force first reaches plateau_fraction of that estimate.
 
     Parameters
     ----------
-    signal          : 1D array (force)
-    sample_freq_hz  : sampling rate
-    bootstrap_s     : seconds at the very end used to estimate the plateau curve
-    threshold_std   : number of residual SDs below the fitted curve defining
-                      the lower edge of the plateau band
-    smooth_window_s : smoothing kernel width (seconds) to suppress noise
-    file_path       : included in error messages for traceability
+    signal               : 1D force array (already truncated to the contraction
+                           window, e.g. up to end_idx_force)
+    sample_freq_hz       : sampling rate
+    onset_idx            : integer index of rise onset (into `signal`)
+    smooth_window_s      : smoothing kernel width for derivative computation
+                           (wider = less noise sensitivity; 15 ms default)
+    deriv_drop_fraction  : df/dt must drop to this fraction of its peak before
+                           the rise is declared ended (default 0.10 = 10 %)
+    sustained_s          : derivative must stay below threshold for this long to
+                           avoid noise spikes triggering early detection
+    plateau_fraction     : fallback — fraction of estimated plateau force used
+                           to define end of rise (default 0.97 = 97 %)
+    file_path            : included in log messages for traceability
 
     Returns
     -------
-    plateau onset index (int)
+    end_idx (int) : index into `signal` where the rise phase ends
     """
-    N           = len(signal)
-    bootstrap_n = int(bootstrap_s * sample_freq_hz)
-    boot_start  = N - bootstrap_n
-
-    # Use zero-based x inside the fitter for numerical stability,
-    # then evaluate the same relative offsets over the full signal.
-    x_boot_rel = np.arange(bootstrap_n, dtype=float)
-    y_boot     = signal[boot_start:]
-    x_full_rel = np.arange(N, dtype=float) - boot_start  
+    N = len(signal)
 
     kernel   = max(1, int(smooth_window_s * sample_freq_hz))
     smoothed = np.convolve(signal, np.ones(kernel) / kernel, mode='same')
 
-    def exp_decay(x, A, lam, C):
-        return A * np.exp(-lam * x) + C
+    seg = smoothed[onset_idx:]
+    if len(seg) < 3:
+        return N - 1
 
-    A0   = float(np.max(y_boot) - np.min(y_boot))   # rough overshoot amplitude
-    C0   = float(np.min(y_boot))                     # asymptotic floor
-    lam0 = 1.0 / bootstrap_n                         # decays over ~bootstrap window
+    dseg = np.diff(seg)
+    if len(dseg) == 0:
+        return N - 1
 
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", OptimizeWarning)
-            popt, _ = curve_fit(
-                exp_decay, x_boot_rel, y_boot,
-                p0=[A0, lam0, C0],
-                bounds=([-np.inf, 0, -np.inf], [np.inf, np.inf, np.inf]),
-                maxfev=10_000
-            )
-    except (RuntimeError, OptimizeWarning) as e:
-        raise RuntimeError(
-            f"{file_path}: exponential fit failed in detect_plateau_onset. "
-            f"Consider adjusting bootstrap_s or inspecting the tail region. "
-            f"Original error: {e}"
-        )
+    # Steepest point of the rise (peak df/dt in post-onset region)
+    peak_deriv_local = int(np.argmax(dseg))
+    peak_deriv_val   = dseg[peak_deriv_local]
 
-    A_fit, lam_fit, C_fit = popt
+    if peak_deriv_val <= 0:
+        # Signal never rose — return end of array as fallback
+        return N - 1
 
-    fitted_boot = exp_decay(x_boot_rel, *popt)
-    fitted_full = exp_decay(x_full_rel, *popt)
+    # --- Stage 1: sustained derivative drop ---
+    threshold   = deriv_drop_fraction * peak_deriv_val
+    sustained_n = max(1, int(sustained_s * sample_freq_hz))
 
-    # Band: curve-relative, using residual spread in bootstrap region
-    residual_std = np.std(y_boot - fitted_boot)
-    lower_band   = fitted_full - threshold_std * residual_std
+    post    = dseg[peak_deriv_local:]
+    count   = 0
+    end_local = None
+    for k, d in enumerate(post):
+        if d <= threshold:
+            count += 1
+            if count >= sustained_n:
+                # Step back to where the sustained run began
+                end_local = peak_deriv_local + (k - sustained_n + 1)
+                break
+        else:
+            count = 0
 
-    # Last sample still below the plateau band = end of the rise
-    below = np.where(smoothed < lower_band)[0]
+    if end_local is not None:
+        end_idx = onset_idx + end_local
+        print(f"[detect_rise_end] {file_path}")
+        print(f"  method           = derivative drop  "
+              f"(threshold = {deriv_drop_fraction*100:.0f}% × peak df/dt)")
+        print(f"  peak_deriv_val   = {peak_deriv_val:.6f}")
+        print(f"  end_idx          = {end_idx}")
+        return int(end_idx)
 
-    print(f"[detect_plateau_onset] {file_path}")
-    print(f"  curve_type    = exponential decay (A·exp(–λx) + C)")
-    print(f"  A             = {A_fit:.6f}")
-    print(f"  λ             = {lam_fit:.6f}")
-    print(f"  C             = {C_fit:.6f}")
-    print(f"  residual_std  = {residual_std:.6f}")
-    print(f"  threshold     = {threshold_std} × residual_std = {threshold_std * residual_std:.6f}")
-    print(f"  end_idx = {int(below[-1])}")
+    # --- Stage 2: plateau-fraction fallback ---
+    plateau_n   = max(1, int(0.15 * N))
+    plateau_est = float(np.median(smoothed[-plateau_n:]))
+    baseline_est = (float(np.mean(signal[:onset_idx]))
+                    if onset_idx > 0 else float(smoothed[0]))
+    threshold_val = baseline_est + plateau_fraction * (plateau_est - baseline_est)
 
-    return int(below[-1])
+    above = np.where(seg >= threshold_val)[0]
+    if len(above) > 0:
+        end_idx = onset_idx + int(above[0])
+        print(f"[detect_rise_end] {file_path}")
+        print(f"  method           = plateau-fraction fallback  "
+              f"({plateau_fraction*100:.0f}% of estimated plateau)")
+        print(f"  plateau_est      = {plateau_est:.4f}")
+        print(f"  threshold_val    = {threshold_val:.4f}")
+        print(f"  end_idx          = {end_idx}")
+        return int(end_idx)
+
+    # Last-resort: end of array
+    print(f"[detect_rise_end] {file_path}")
+    print(f"  method           = last-resort fallback (end of array)")
+    return N - 1
+
 
 def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     """
@@ -187,14 +251,15 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
     Returns
     -------
     dict with keys:
-      'time'             : time axis in seconds
-      'length_mm'        : muscle length in mm (using calibrated AI channel)
-      'force_mN'         : force in mN (using calibrated AI channel)
-      'raw_df'           : full pandas DataFrame of the test data
-      'start_idx_force'  : onset index detected from force signal
-      'start_idx_length' : onset index detected from length signal
-      'end_idx_force'    : offset index detected from force signal
-      'end_idx_length'   : offset index detected from length signal
+      'time'            : time axis in seconds
+      'length_mm'       : muscle length in mm (using calibrated AI channel)
+      'force_mN'        : force in mN (using calibrated AI channel)
+      'raw_df'          : full pandas DataFrame of the test data
+      'start_idx'       : integer onset index detected from force signal
+      'crossing_time'   : interpolated time (s) of last baseline crossing
+                          — use as the actual integration start (force = baseline there)
+      'end_idx'         : end of rise phase detected from force signal
+      'end_plateau'     : index of minimum length (end of contraction window)
     """
 
     with open(file_path, "r", encoding="latin-1") as f:
@@ -282,64 +347,80 @@ def parse_dmc_file(file_path: str) -> dict[str, np.ndarray]:
 
     # Raw volts
     length_volts = df[length_chan].to_numpy(dtype=float)
-    force_volts = df[force_chan].to_numpy(dtype=float)
+    force_volts  = df[force_chan].to_numpy(dtype=float)
 
     # Convert to physical units: units = (volts - offset) * scale
     length_mm = (length_volts - calib[length_chan]["offset"]) * calib[length_chan]["scale"] + calib[length_chan]["tad"]
-    force_ref = (force_volts - calib[force_chan]["offset"]) * calib[force_chan]["scale"] + calib[force_chan]["tad"]
+    force_ref = (force_volts  - calib[force_chan]["offset"])  * calib[force_chan]["scale"]  + calib[force_chan]["tad"]
 
     # Treat 'Ref' for force as mN (matches your previous scaling)
     force_mN = force_ref
 
     # Build time axis
-    num_samples = len(df)
+    num_samples    = len(df)
     sample_indices = np.arange(num_samples, dtype=float)
-    time_s = sample_indices / sample_freq_hz
+    time_s         = sample_indices / sample_freq_hz
 
-    # Detect onset and offset from each signal independently
-    start_idx = detect_onset(force_mN,  sample_freq_hz)
+    # Detect onset: returns integer index + interpolated baseline-crossing time
+    start_idx, crossing_time = detect_onset(force_mN, sample_freq_hz,
+                                            file_path=file_path)
+
+    # Contraction window: from onset to the point of minimum length
     end_idx_force = int(start_idx + np.argmin(length_mm[start_idx:]))
-    end_idx = detect_plateau_onset(force_mN[:end_idx_force], sample_freq_hz, file_path=file_path)
+
+    # Detect end of rise phase within the contraction window
+    end_idx = detect_rise_end(force_mN[:end_idx_force], sample_freq_hz,
+                              onset_idx=start_idx, file_path=file_path)
 
     return {
-        "time": time_s,
-        "length_mm": length_mm,
-        "force_mN": force_mN,
-        "raw_df": df,
-        "start_idx": start_idx,
-        "end_idx": end_idx,
-        "end_plateau": end_idx_force
+        "time":           time_s,
+        "length_mm":      length_mm,
+        "force_mN":       force_mN,
+        "raw_df":         df,
+        "start_idx":      start_idx,
+        "crossing_time":  crossing_time,
+        "end_idx":        end_idx,
+        "end_plateau":    end_idx_force,
     }
+
 
 def isometric_work_from_file(file_path: str) -> float:
     """
     Compute the isometric work (force-time integral) for a single file.
 
     The isometric work is the area under the baseline-corrected force curve
-    during the rising phase — from signal onset to plateau entry.
+    during the rising phase.
+
+    The integration window runs from the interpolated baseline crossing
+    (where force = baseline, so the integrand = 0) to the detected end of
+    the rise phase.  Prepending the crossing point ensures the integration
+    starts at zero regardless of noise or timing resolution.
 
     Units: mN · s  (force-time integral / impulse)
-
-    Steps:
-      - Parse DMC file.
-      - Baseline-correct force using the pre-contraction mean.
-      - Integrate (force - baseline) over time from onset to plateau entry.
     """
-    parsed        = parse_dmc_file(file_path)
-    time          = parsed["time"]
-    force_mN      = parsed["force_mN"]
-    start_idx     = parsed["start_idx"]
-    end_idx       = parsed["end_idx"]
+    parsed         = parse_dmc_file(file_path)
+    time           = parsed["time"]
+    force_mN       = parsed["force_mN"]
+    start_idx      = parsed["start_idx"]
+    crossing_time  = parsed["crossing_time"]
+    end_idx        = parsed["end_idx"]
 
     # Baseline from pre-contraction region
     force_baseline = float(np.mean(force_mN[:start_idx]))
 
-    force_seg = force_mN[start_idx:end_idx + 1] - force_baseline
-    time_seg  = time[start_idx:end_idx + 1]
+    # Baseline-corrected force from onset to end of rise
+    force_seg = force_mN[start_idx : end_idx + 1] - force_baseline
+    time_seg  = time[start_idx : end_idx + 1]
 
-    total_work = float(np.trapezoid(force_seg, time_seg))
+    # Prepend the interpolated baseline-crossing point.
+    # At that point the baseline-corrected force is exactly 0 by construction,
+    # so the integration cleanly starts at zero.
+    time_int  = np.concatenate([[crossing_time], time_seg])
+    force_int = np.concatenate([[0.0],           force_seg])
 
+    total_work = float(np.trapezoid(force_int, time_int))
     return total_work
+
 
 def run_isometric_work(folder_path: str, csa_mm2: float) -> List[float]:
     """
@@ -375,35 +456,59 @@ def run_isometric_work(folder_path: str, csa_mm2: float) -> List[float]:
 
     return animal_results
 
+
 def val_isometric_work(file_path: str, i: int):
     """
-    Produce force and work validation figures for a single file.
-    Overlays onset and plateau-entry markers on the force plot.
-    Shades the integrated region on the work (force-time) plot.
+    Produce a force validation figure for a single file.
+
+    - Green dot : interpolated baseline crossing (true integration start,
+                  where baseline-corrected force = 0)
+    - Red dot   : end of rise phase (integration end)
+    - Blue shading: integrated region
     """
-    parsed = parse_dmc_file(file_path)
-    time = parsed["time"]
-    force_mN = parsed["force_mN"]
-    start_idx = parsed["start_idx"]
-    end_idx = parsed["end_idx"]
-    end_plateau = parsed["end_plateau"]
+    parsed        = parse_dmc_file(file_path)
+    time          = parsed["time"]
+    force_mN      = parsed["force_mN"]
+    start_idx     = parsed["start_idx"]
+    crossing_time = parsed["crossing_time"]
+    end_idx       = parsed["end_idx"]
+    end_plateau   = parsed["end_plateau"]
 
     force_baseline = float(np.mean(force_mN[:start_idx]))
 
     short_path = "/".join(PlPath(file_path).parts[-3:])
 
+    # Build the shaded integration region with the prepended baseline-crossing point
+    time_plot  = np.concatenate([[crossing_time],
+                                  time[start_idx : end_idx + 1]])
+    force_plot = np.concatenate([[force_baseline],
+                                  force_mN[start_idx : end_idx + 1]])
+
     fig_l, ax_l = plt.subplots(figsize=(11, 8))
-    ax_l.plot(time[:end_plateau + 1], force_mN[:end_plateau + 1])
-    ax_l.fill_between(time[start_idx:end_idx + 1], force_mN[start_idx:end_idx + 1], force_baseline,
-                      alpha=0.3, label="Integrated Work")
-    ax_l.plot(time[start_idx], force_mN[start_idx], 'o', color='green', label="Start Point")
-    ax_l.plot(time[end_idx], force_mN[end_idx], 'o', color='brown', label="End Point")
+    ax_l.plot(time[: end_plateau + 1], force_mN[: end_plateau + 1])
+    ax_l.fill_between(time_plot, force_plot, force_baseline,
+                      alpha=0.3, label="Integrated Region")
+
+    # Green dot: interpolated baseline crossing (guaranteed at force = baseline)
+    ax_l.plot(crossing_time, force_baseline,
+              'o', color='green', label="Start Point (baseline crossing)")
+
+    # Red dot: end of rise phase
+    ax_l.plot(time[end_idx], force_mN[end_idx],
+              'o', color='brown', label="End Point (rise end)")
+
     ax_l.set_xlabel("Time (s)")
     ax_l.set_ylabel("Force (mN)")
     ax_l.set_title(f"{short_path} (index {i})")
+    ax_l.legend()
     ax_l.grid(True)
 
     return fig_l
+
+
+# ---------------------------------------------------------------------------
+# Streamlit UI
+# ---------------------------------------------------------------------------
 
 st.title("Isometric Work Analysis")
 
@@ -508,7 +613,7 @@ def list_files(folder: str):
 if st.button("Run Analysis"):
     st.write("Calculating...")
 
-    csv_output  = []
+    csv_output   = []
     csv_x_labels = []
 
     for i, foldername in enumerate(sorted(os.listdir(unzip_folder), key=natural_sort_key)):
@@ -530,8 +635,8 @@ if st.button("Run Analysis"):
     st.session_state.analysis_done = True
 
 if st.session_state.analysis_done:
-    csv_output   = st.session_state.csv_output
-    csv_x_labels = st.session_state.csv_x_labels
+    csv_output     = st.session_state.csv_output
+    csv_x_labels   = st.session_state.csv_x_labels
     animal_folders = st.session_state.animal_folders or []
 
     st.write("Graphing...")
@@ -587,7 +692,7 @@ if st.session_state.analysis_done:
             )
 
             if mode == "Random Sample":
-                pct      = st.slider("Sample fraction", 0.0, 1.0, 0.05, 0.01)
+                pct       = st.slider("Sample fraction", 0.0, 1.0, 0.05, 0.01)
                 n_samples = max(1, int(pct * len(open_animal_folder)))
 
                 if st.button("Run Random Sample"):
