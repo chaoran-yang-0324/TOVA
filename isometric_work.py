@@ -384,7 +384,6 @@ def val_isometric_work(file_path: str, i: int):
     parsed = parse_dmc_file(file_path)
     time = parsed["time"]
     force_mN = parsed["force_mN"]
-    length_mm = parsed["length_mm"]
     start_idx = parsed["start_idx"]
     end_idx = parsed["end_idx"]
     end_plateau = parsed["end_plateau"]
@@ -598,10 +597,8 @@ if st.session_state.analysis_done:
                     ))
                     for idx in random_indices:
                         val_path = open_animal_folder[idx]
-                        fig_l, fig_f, fig_w = val_isometric_work(val_path, idx)
+                        fig_l = val_isometric_work(val_path, idx)
                         st.pyplot(fig_l)
-                        st.pyplot(fig_f)
-                        st.pyplot(fig_w)
 
             else:
                 start = st.number_input(
@@ -620,7 +617,5 @@ if st.session_state.analysis_done:
                     if st.button("Run Specific Inspection"):
                         for idx in range(int(start), int(end) + 1):
                             val_path = open_animal_folder[idx]
-                            fig_l, fig_f, fig_w = val_isometric_work(val_path, idx)
+                            fig_l = val_isometric_work(val_path, idx)
                             st.pyplot(fig_l)
-                            st.pyplot(fig_f)
-                            st.pyplot(fig_w)
