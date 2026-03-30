@@ -7,9 +7,9 @@ figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.6"
+__version__ = "2.7"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-03-29"
+__date__ = "2026-03-30"
 
 import os
 import re
@@ -134,20 +134,32 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
 
     Returns
     -------
-    (start_time, baseline_mean, end_time, plateau_mean)
+    (start_time, baseline_mean, end_time, plateau_mean, slope_flag)
     Times are in seconds; force values match the units of `signal`.
+    slope_flag is True when the plateau has a significant positive drift
+    (rising plateau; end-point target was the peak rather than the mean).
     """
     signal_max = float(np.max(signal))
     if signal_max <= 0:
         raise RuntimeError(f"{file_path}: signal has no positive values.")
 
+    # Pre-smooth before counting.  On the raw signal, noise makes the force
+    # linger around any given level long enough for small spikes to create
+    # spurious extra crossings — even rare baseline spikes can break the
+    # 1-crossing band prematurely and push n_end to a nonsensically low value.
+    # Edge-padding avoids the boundary roll-off that mode='same' produces;
+    # the raw signal is used for all subsequent interpolation steps.
+    smooth_k  = max(1, int(0.020 * sample_freq_hz))   # 20 ms
+    padded    = np.pad(signal, smooth_k // 2, mode='edge')
+    signal_sm = np.convolve(padded, np.ones(smooth_k) / smooth_k, mode='valid')[:len(signal)]
+
     # Avoid testing exactly 0 or exactly max (endpoint ambiguity)
     n_values = np.linspace(signal_max * 0.001, signal_max * 0.999, n_steps)
 
     # Vectorised crossing count for all n levels simultaneously.
-    # above[i, j] = (signal[i] >= n_values[j])  shape (N, M)
+    # above[i, j] = (signal_sm[i] >= n_values[j])  shape (N, M)
     # |diff| along axis 0 counts every above↔below transition per column.
-    above           = signal[:, np.newaxis] >= n_values[np.newaxis, :]  # (N, M) bool
+    above           = signal_sm[:, np.newaxis] >= n_values[np.newaxis, :]  # (N, M) bool
     diffs           = np.diff(above.astype(np.int8), axis=0)             # (N-1, M)
     crossing_counts = np.sum(np.abs(diffs), axis=0)                      # (M,) int
 
@@ -161,7 +173,9 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
     first_one_local  = int(np.argmax(one_mask))
     n_start          = float(n_values[first_one_local])
 
-    t_ind_start      = _first_upward_crossing_time(signal, n_start, sample_freq_hz)
+    # Use smoothed signal for indicator (avoids noise-spike false crossings).
+    # Raw signal used for the final start_time interpolation so timing is sharp.
+    t_ind_start      = _first_upward_crossing_time(signal_sm, n_start, sample_freq_hz)
     ind_start_sample = max(1, min(int(round(t_ind_start * sample_freq_hz)),
                                    len(signal) - 1))
     baseline_mean    = float(np.mean(signal[:ind_start_sample]))
@@ -176,16 +190,49 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
             break
 
     if n_end is not None:
-        t_ind_end      = _first_upward_crossing_time(signal, n_end, sample_freq_hz,
+        # Use smoothed signal for indicator; raw for final end_time.
+        t_ind_end      = _first_upward_crossing_time(signal_sm, n_end, sample_freq_hz,
                                                        after_sample=ind_start_sample)
         ind_end_sample = max(ind_start_sample + 1,
                              min(int(round(t_ind_end * sample_freq_hz)),
                                   len(signal) - 1))
-        plateau_mean   = float(np.mean(signal[ind_end_sample:]))
+        plateau_seg = signal[ind_end_sample:]
     else:
         # Very clean plateau — fall back to tail of signal
-        plateau_n    = max(1, int(0.15 * len(signal)))
-        plateau_mean = float(np.mean(signal[-plateau_n:]))
+        plateau_n   = max(1, int(0.15 * len(signal)))
+        plateau_seg = signal[-plateau_n:]
+        ind_end_sample = len(signal) - plateau_n
+
+    # ── Plateau slope test ─────────────────────────────────────────────── #
+    # Fit a line to the plateau segment. If it is still meaningfully rising
+    # (the machine never fully levelled off, Image 2 style), use the peak of
+    # the plateau region as the end-point force target instead of the mean.
+    #
+    # The test compares the drift (last-quarter mean minus first-quarter mean
+    # of the plateau segment) to the plateau's own noise level (residual std
+    # after detrending).  If the drift exceeds `drift_snr_threshold` noise
+    # standard deviations, the plateau is classed as "rising".
+    #
+    # This SNR approach is more robust than a fixed slope threshold because it
+    # self-normalises: a tiny drift in a noisy plateau is ignored, while even
+    # a slow drift in a clean plateau is reliably caught.
+    slope_flag          = False
+    drift_snr_threshold = 2.0
+
+    if len(plateau_seg) >= 8:
+        q = max(1, len(plateau_seg) // 4)
+        drift      = float(np.mean(plateau_seg[-q:])) - float(np.mean(plateau_seg[:q]))
+        t_plat     = np.arange(len(plateau_seg), dtype=float) / sample_freq_hz
+        slope, intercept = np.polyfit(t_plat, plateau_seg, 1)
+        residuals  = plateau_seg - (slope * t_plat + intercept)
+        noise_std  = float(np.std(residuals))
+        drift_snr  = drift / noise_std if noise_std > 0 else 0.0
+        slope_flag = bool(drift > 0 and drift_snr > drift_snr_threshold)
+
+    if slope_flag:
+        plateau_mean = float(np.max(plateau_seg))          # rising plateau → use peak
+    else:
+        plateau_mean = float(np.mean(plateau_seg))         # flat plateau  → use mean
 
     end_time = _first_upward_crossing_time(signal, plateau_mean, sample_freq_hz,
                                              after_sample=ind_start_sample)
@@ -193,14 +240,16 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
     # ── Diagnostics ────────────────────────────────────────────────────── #
     n_end_str = f"{n_end:.4f}" if n_end is not None else "not found (fallback used)"
     print(f"[detect_limits_by_intersection] {file_path}")
-    print(f"  n_start       = {n_start:.4f}  (baseline noise ceiling)")
-    print(f"  n_end         = {n_end_str}  (plateau noise floor)")
-    print(f"  baseline_mean = {baseline_mean:.4f}")
-    print(f"  plateau_mean  = {plateau_mean:.4f}")
-    print(f"  start_time    = {start_time:.6f} s")
-    print(f"  end_time      = {end_time:.6f} s")
+    print(f"  n_start        = {n_start:.4f}  (baseline noise ceiling)")
+    print(f"  n_end          = {n_end_str}  (plateau noise floor)")
+    print(f"  baseline_mean  = {baseline_mean:.4f}")
+    print(f"  slope_flag     = {slope_flag}  "
+          f"({'rising plateau → peak target' if slope_flag else 'flat plateau → mean target'})")
+    print(f"  plateau_mean   = {plateau_mean:.4f}")
+    print(f"  start_time     = {start_time:.6f} s")
+    print(f"  end_time       = {end_time:.6f} s")
 
-    return float(start_time), float(baseline_mean), float(end_time), float(plateau_mean)
+    return float(start_time), float(baseline_mean), float(end_time), float(plateau_mean), bool(slope_flag)
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +305,8 @@ def parse_dmc_file(file_path: str) -> dict:
       'end_time'       : interpolated end time (s)   — force = plateau_mean
       'baseline_mean'  : pre-contraction baseline force (mN)
       'plateau_mean'   : plateau force (mN)
-      'end_plateau'    : index of minimum length (contraction window limit)
+      'slope_flag'     : True if the plateau had a significant positive drift
+                         (rising plateau; peak was used as end-point target)
     """
     with open(file_path, "r", encoding="latin-1") as f:
         lines = f.readlines()
@@ -333,9 +383,10 @@ def parse_dmc_file(file_path: str) -> dict:
     end_idx_force = int(rough_idx + np.argmin(length_mm[rough_idx:]))
 
     # Precise limits via intersection sweep (operates on the contraction window)
-    start_time, baseline_mean, end_time, plateau_mean = detect_limits_by_intersection(
-        force_mN[:end_idx_force], sample_freq_hz, file_path=file_path
-    )
+    start_time, baseline_mean, end_time, plateau_mean, slope_flag = \
+        detect_limits_by_intersection(
+            force_mN[:end_idx_force], sample_freq_hz, file_path=file_path
+        )
 
     return {
         "time":          time_s,
@@ -346,6 +397,7 @@ def parse_dmc_file(file_path: str) -> dict:
         "end_time":      end_time,
         "baseline_mean": baseline_mean,
         "plateau_mean":  plateau_mean,
+        "slope_flag":    slope_flag,
         "end_plateau":   end_idx_force,
     }
 
@@ -354,18 +406,15 @@ def parse_dmc_file(file_path: str) -> dict:
 # Integration
 # ---------------------------------------------------------------------------
 
-def isometric_work_from_file(file_path: str) -> float:
+def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
     """
     Compute the isometric work (force-time integral) for a single file.
 
-    The integration window runs from start_time to end_time.
-    At start_time  the baseline-corrected force = 0   (by construction).
-    At end_time    the baseline-corrected force = plateau_mean − baseline_mean.
-
-    Interpolated boundary points are prepended/appended so np.trapezoid
-    captures the exact fractional limits rather than the nearest samples.
-
-    Units: mN · s
+    Returns
+    -------
+    (work_mN_s, slope_flag)
+      work_mN_s  : force-time integral (mN · s), baseline corrected
+      slope_flag : True if the plateau was rising (peak used as end target)
     """
     parsed        = parse_dmc_file(file_path)
     time          = parsed["time"]
@@ -374,6 +423,7 @@ def isometric_work_from_file(file_path: str) -> float:
     end_time      = parsed["end_time"]
     baseline_mean = parsed["baseline_mean"]
     plateau_mean  = parsed["plateau_mean"]
+    slope_flag    = parsed["slope_flag"]
 
     # Integer samples strictly inside (start_time, end_time)
     start_sample = int(np.searchsorted(time, start_time, side='right'))
@@ -388,17 +438,20 @@ def isometric_work_from_file(file_path: str) -> float:
     force_int = np.concatenate([[0.0],         force_seg,
                                  [plateau_mean - baseline_mean]])
 
-    return float(np.trapezoid(force_int, time_int))
+    return float(np.trapezoid(force_int, time_int)), bool(slope_flag)
 
 
 # ---------------------------------------------------------------------------
 # Per-folder processing
 # ---------------------------------------------------------------------------
 
-def run_isometric_work(folder_path: str, csa_mm2: float) -> List[float]:
+def run_isometric_work(folder_path: str, csa_mm2: float) -> List[Tuple[float, bool]]:
     """
     Process one animal folder and compute normalised isometric work (mN·s/mm²)
     for each contraction file.
+
+    Returns a list of (normalized_work, slope_flag) tuples.
+    slope_flag is True when the plateau had a significant positive drift.
     """
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"Folder does not exist: {folder_path}")
@@ -406,13 +459,12 @@ def run_isometric_work(folder_path: str, csa_mm2: float) -> List[float]:
     files = [f for f in os.listdir(folder_path)
              if f.lower().endswith(".ddf") and not f.startswith(".")]
 
-    animal_results: List[float] = []
+    animal_results: List[Tuple[float, bool]] = []
     for f in sorted(files, key=natural_sort_key):
         data_file = os.path.join(folder_path, f)
         print(f"Processing {f} ...")
-        work            = isometric_work_from_file(data_file)
-        normalized_work = work / csa_mm2
-        animal_results.append(normalized_work)
+        work, slope_flag = isometric_work_from_file(data_file)
+        animal_results.append((work / csa_mm2, slope_flag))
 
     return animal_results
 
@@ -606,8 +658,9 @@ if st.session_state.analysis_done:
     st.write("Graphing...")
     fig, ax = plt.subplots(figsize=(11, 8))
     for idx, result in enumerate(csv_output):
-        x_coord = np.arange(len(result))
-        ax.plot(x_coord, np.array(result), label=f"Folder {idx + 1}")
+        values  = [v for v, _ in result]
+        x_coord = np.arange(len(values))
+        ax.plot(x_coord, np.array(values), label=f"Folder {idx + 1}")
     ax.set_xlabel("Contraction Index")
     ax.set_ylabel("Normalized Isometric Work (mN·s/mm^2)")
     ax.set_title("Isometric Work")
@@ -618,12 +671,15 @@ if st.session_state.analysis_done:
     rows = []
     for i in range(len(csv_x_labels)):
         labels = csv_x_labels[i]
-        values = csv_output[i]
-        for fname, val in zip(labels, values):
-            rows.append([fname, val])
-        rows.append(["", ""])
+        for fname, (val, slope_flag) in zip(labels, csv_output[i]):
+            rows.append([fname, val, "*" if slope_flag else ""])
+        rows.append(["", "", ""])
 
-    final_df  = pd.DataFrame(rows, columns=["filename", "isometric work (mN·s/mm^2)"])
+    final_df  = pd.DataFrame(rows, columns=[
+        "filename",
+        "isometric work (mN·s/mm^2)",
+        "plateau drift",
+    ])
     csv_bytes = final_df.to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Download CSV",
