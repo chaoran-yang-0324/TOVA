@@ -27,10 +27,6 @@ def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split(r"([0-9]+)", s)]
 
-# ---------------------------------------------------------------------------
-# Internal helpers for interpolated crossing times
-# ---------------------------------------------------------------------------
-
 def _first_upward_crossing_time(signal: np.ndarray, level: float,
                                   sample_freq_hz: float,
                                   after_sample: int = 0) -> float:
@@ -50,7 +46,6 @@ def _first_upward_crossing_time(signal: np.ndarray, level: float,
             return i / sample_freq_hz
     return (n - 1) / sample_freq_hz
 
-
 def _last_upward_crossing_before(signal: np.ndarray, level: float,
                                    sample_freq_hz: float,
                                    before_sample: int) -> float:
@@ -67,11 +62,6 @@ def _last_upward_crossing_before(signal: np.ndarray, level: float,
             frac = (level - signal[i - 1]) / (signal[i] - signal[i - 1])
             return (i - 1 + frac) / sample_freq_hz
     return 0.0
-
-
-# ---------------------------------------------------------------------------
-# Core detection: horizontal-line intersection sweep
-# ---------------------------------------------------------------------------
 
 def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
                                     n_steps: int = 2000,
@@ -158,7 +148,6 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
 
     return float(start_time), float(baseline_mean)
 
-
 def _length_shortening_onset(length_mm: np.ndarray, sample_freq_hz: float,
                               onset_sample: int, file_path: str = "") -> float:
     """
@@ -196,7 +185,7 @@ def _length_shortening_onset(length_mm: np.ndarray, sample_freq_hz: float,
     baseline_std  = float(np.std(length_mm[:onset_sample]))
     # Floor the std so a near-zero noise level doesn't produce a hair-trigger
     std_floor     = max(baseline_std, 0.001)
-    threshold     = baseline_mean - 3.0 * std_floor
+    threshold     = baseline_mean - 6.0 * std_floor
 
     smooth_k  = max(1, int(0.020 * sample_freq_hz))   # 20 ms
     padded    = np.pad(length_mm, smooth_k // 2, mode='edge')
@@ -208,7 +197,7 @@ def _length_shortening_onset(length_mm: np.ndarray, sample_freq_hz: float,
             t    = (i + frac) / sample_freq_hz
             print(f"[_length_shortening_onset] {file_path}")
             print(f"  length_baseline = {baseline_mean:.4f} mm  "
-                  f"threshold = {threshold:.4f} mm  (−3σ = −{3*std_floor:.4f})")
+                  f"threshold = {threshold:.4f} mm  (−6σ = −{6*std_floor:.4f})")
             print(f"  shortening onset = {t:.6f} s  (sample {i})")
             return float(t)
 
@@ -218,7 +207,6 @@ def _length_shortening_onset(length_mm: np.ndarray, sample_freq_hz: float,
     print(f"[_length_shortening_onset] {file_path}: WARNING — no threshold crossing "
           f"found; falling back to length minimum at {t_fallback:.4f} s")
     return float(t_fallback)
-
 
 def _plateau_slope_flag(force_seg: np.ndarray, sample_freq_hz: float) -> bool:
     """
@@ -241,9 +229,6 @@ def _plateau_slope_flag(force_seg: np.ndarray, sample_freq_hz: float) -> bool:
     noise_std  = float(np.std(residuals))
     drift_snr  = drift / noise_std if noise_std > 0 else 0.0
     return bool(drift > 0 and drift_snr > 2.0)
-
-
-
 
 def _rough_onset_idx(signal: np.ndarray, sample_freq_hz: float,
                      bootstrap_s: float = 0.08, threshold_std: float = 6.0,
@@ -273,9 +258,6 @@ def _rough_onset_idx(signal: np.ndarray, sample_freq_hz: float,
     return 0
 
 
-# ---------------------------------------------------------------------------
-# DMC file parser
-# ---------------------------------------------------------------------------
 
 def parse_dmc_file(file_path: str) -> dict:
     """
@@ -409,11 +391,6 @@ def parse_dmc_file(file_path: str) -> dict:
         "end_plateau":   end_idx_force,
     }
 
-
-# ---------------------------------------------------------------------------
-# Integration
-# ---------------------------------------------------------------------------
-
 def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
     """
     Compute the isometric work (force-time integral) for a single file.
@@ -467,11 +444,6 @@ def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
 
     return float(np.trapezoid(force_int, time_int)), bool(slope_flag)
 
-
-# ---------------------------------------------------------------------------
-# Per-folder processing
-# ---------------------------------------------------------------------------
-
 def run_isometric_work(folder_path: str, csa_mm2: float) -> List[Tuple[float, bool]]:
     """
     Process one animal folder and compute normalised isometric work (mN·s/mm²)
@@ -494,11 +466,6 @@ def run_isometric_work(folder_path: str, csa_mm2: float) -> List[Tuple[float, bo
         animal_results.append((work / csa_mm2, slope_flag))
 
     return animal_results
-
-
-# ---------------------------------------------------------------------------
-# Validation figure
-# ---------------------------------------------------------------------------
 
 def val_isometric_work(file_path: str, i: int):
     """
@@ -581,9 +548,6 @@ def val_isometric_work(file_path: str, i: int):
     return fig_l
 
 
-# ---------------------------------------------------------------------------
-# Streamlit UI
-# ---------------------------------------------------------------------------
 
 st.title("Isometric Work Analysis")
 
