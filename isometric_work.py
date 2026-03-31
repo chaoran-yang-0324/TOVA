@@ -7,9 +7,11 @@ figure plus the raw results.
 """
 
 __author__ = "Chaoran Yang"
-__version__ = "2.7"
+__version__ = "2.6"
 __email__ = "cy197@duke.edu"
-__date__ = "2026-03-30"
+__date__ = "2026-03-31"
+
+
 
 import os
 import re
@@ -26,6 +28,10 @@ from pathlib import Path as PlPath
 def natural_sort_key(s: str):
     return [int(text) if text.isdigit() else text.lower()
             for text in re.split(r"([0-9]+)", s)]
+
+# ---------------------------------------------------------------------------
+# Internal helpers for interpolated crossing times
+# ---------------------------------------------------------------------------
 
 def _first_upward_crossing_time(signal: np.ndarray, level: float,
                                   sample_freq_hz: float,
@@ -46,6 +52,7 @@ def _first_upward_crossing_time(signal: np.ndarray, level: float,
             return i / sample_freq_hz
     return (n - 1) / sample_freq_hz
 
+
 def _last_upward_crossing_before(signal: np.ndarray, level: float,
                                    sample_freq_hz: float,
                                    before_sample: int) -> float:
@@ -63,33 +70,42 @@ def _last_upward_crossing_before(signal: np.ndarray, level: float,
             return (i - 1 + frac) / sample_freq_hz
     return 0.0
 
+
+# ---------------------------------------------------------------------------
+# Core detection: horizontal-line intersection sweep
+# ---------------------------------------------------------------------------
+
 def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
                                     n_steps: int = 2000,
                                     file_path: str = "",
-                                    ) -> Tuple[float, float]:
+                                    ) -> Tuple[float, float, float, float, bool]:
     """
-    Identify the integration START by sweeping a horizontal line y = n and
-    counting intersections with the force-time signal.
-
-    END detection is NOT performed here — it is derived from the length signal
-    (see _length_shortening_onset in parse_dmc_file).
+    Identify integration START and END by sweeping a horizontal line y = n
+    and counting intersections with the force-time signal.
 
     How the crossing-count profile looks
     -------------------------------------
-    Sweeping n from 0 upward:
+      n inside baseline noise band        ->  many crossings
+      n_start (first n with 1 crossing)   ->  the rise has begun; exactly 1 crossing
+      [n_start .. n_end)                  ->  1-crossing band spanning the rise
+      n_end (first n with > 1 crossings)  ->  plateau noise floor; multiple crossings
+      fallback (no n_end found)           ->  very clean plateau; use tail mean
 
-      n inside baseline noise band  ->  many crossings
-      n_start (first n with 1 crossing)  ->  signal below n during quiet baseline,
-                                              crosses n exactly once on the way up
+    START
+      1. n_start -> first level with exactly 1 crossing (on pre-smoothed signal).
+      2. Indicator time = first upward crossing of n_start.
+      3. baseline_mean  = mean( signal[ : indicator_sample ] ).
+      4. start_time     = last upward crossing of baseline_mean before the
+                          indicator (interpolated) -> integrand = 0 here.
 
-    Integration start
-    -----------------
-      1.  n_start  → first n with exactly 1 crossing (on the pre-smoothed signal).
-      2.  Indicator time  = first upward crossing of n_start.
-      3.  baseline_mean   = mean( signal[ : indicator_sample ] ).
-      4.  start_time      = last upward crossing of baseline_mean before the
-                            indicator (interpolated) → force = baseline here,
-                            so the baseline-corrected integrand starts at 0.
+    END
+      1. n_end -> first level with > 1 crossings after the 1-crossing band.
+      2. Indicator time = first upward crossing of n_end (top of the rise).
+      3. plateau_seg    = signal[ indicator_sample : ].
+      4. Slope flag: if plateau_seg drifts upward (SNR > 2), plateau_mean = peak;
+                     otherwise plateau_mean = mean.
+      5. end_time       = first upward crossing of plateau_mean after onset.
+         Fallback when n_end not found: plateau_mean from last 15% of signal.
 
     Parameters
     ----------
@@ -100,15 +116,14 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
 
     Returns
     -------
-    (start_time, baseline_mean)
+    (start_time, baseline_mean, end_time, plateau_mean, slope_flag)
     """
     signal_max = float(np.max(signal))
     if signal_max <= 0:
         raise RuntimeError(f"{file_path}: signal has no positive values.")
 
     # Pre-smooth before counting to suppress noise-spike false crossings.
-    # Edge-padding avoids boundary roll-off from mode='same'.
-    # Raw signal is used for all interpolation steps.
+    # Edge-padding avoids boundary roll-off. Raw signal used for interpolation.
     smooth_k  = max(1, int(0.020 * sample_freq_hz))   # 20 ms
     padded    = np.pad(signal, smooth_k // 2, mode='edge')
     signal_sm = np.convolve(padded, np.ones(smooth_k) / smooth_k, mode='valid')[:len(signal)]
@@ -131,8 +146,7 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
     first_one_local  = int(np.argmax(one_mask))
     n_start          = float(n_values[first_one_local])
 
-    # Smoothed signal for indicator (avoids noise-spike false crossings);
-    # raw signal for the final interpolated start_time.
+    # Smoothed signal for indicator; raw signal for final interpolated time.
     t_ind_start      = _first_upward_crossing_time(signal_sm, n_start, sample_freq_hz)
     ind_start_sample = max(1, min(int(round(t_ind_start * sample_freq_hz)),
                                    len(signal) - 1))
@@ -140,73 +154,48 @@ def detect_limits_by_intersection(signal: np.ndarray, sample_freq_hz: float,
     start_time       = _last_upward_crossing_before(signal, baseline_mean,
                                                      sample_freq_hz, ind_start_sample)
 
+    # ── END ────────────────────────────────────────────────────────────── #
+    n_end = None
+    for k in range(first_one_local, len(crossing_counts)):
+        if crossing_counts[k] > 1:
+            n_end = float(n_values[k])
+            break
+
+    if n_end is not None:
+        t_ind_end      = _first_upward_crossing_time(signal_sm, n_end, sample_freq_hz,
+                                                       after_sample=ind_start_sample)
+        ind_end_sample = max(ind_start_sample + 1,
+                             min(int(round(t_ind_end * sample_freq_hz)),
+                                  len(signal) - 1))
+        plateau_seg    = signal[ind_end_sample:]
+    else:
+        plateau_n      = max(1, int(0.15 * len(signal)))
+        plateau_seg    = signal[-plateau_n:]
+        ind_end_sample = len(signal) - plateau_n
+
+    # ── SLOPE FLAG + plateau target ────────────────────────────────────── #
+    slope_flag   = _plateau_slope_flag(plateau_seg, sample_freq_hz)
+    plateau_mean = float(np.max(plateau_seg)) if slope_flag \
+                   else float(np.mean(plateau_seg))
+
+    end_time = _first_upward_crossing_time(signal, plateau_mean, sample_freq_hz,
+                                             after_sample=ind_start_sample)
+
     # ── Diagnostics ────────────────────────────────────────────────────── #
+    n_end_str = f"{n_end:.4f}" if n_end is not None else "not found (fallback used)"
     print(f"[detect_limits_by_intersection] {file_path}")
     print(f"  n_start        = {n_start:.4f}  (baseline noise ceiling)")
+    print(f"  n_end          = {n_end_str}  (plateau noise floor)")
     print(f"  baseline_mean  = {baseline_mean:.4f}")
+    plateau_label = 'rising plateau -> peak target' if slope_flag else 'flat plateau -> mean target'
+    print(f"  slope_flag     = {slope_flag}  ({plateau_label})")
+    print(f"  plateau_mean   = {plateau_mean:.4f}")
     print(f"  start_time     = {start_time:.6f} s")
+    print(f"  end_time       = {end_time:.6f} s")
 
-    return float(start_time), float(baseline_mean)
+    return float(start_time), float(baseline_mean), float(end_time), float(plateau_mean), bool(slope_flag)
 
-def _length_shortening_onset(length_mm: np.ndarray, sample_freq_hz: float,
-                              onset_sample: int, file_path: str = "") -> float:
-    """
-    Find the interpolated time at which the length signal first dips below
-    its pre-contraction baseline — the moment shortening begins and the
-    isometric phase ends.
 
-    Algorithm
-    ---------
-    1. Baseline mean and std computed from length_mm[ : onset_sample ].
-    2. Threshold = baseline_mean − 3 × baseline_std.
-       This tolerates small noise fluctuations while reliably catching the
-       onset of genuine shortening (which is typically several tenths of a mm).
-    3. Lightly smooth the length signal (20 ms) to suppress sub-noise spikes.
-    4. Scan forward from onset_sample for the first sample that falls below
-       the threshold, then linearly interpolate the exact crossing time.
-
-    Parameters
-    ----------
-    length_mm      : full-recording length array (mm)
-    sample_freq_hz : sampling rate (Hz)
-    onset_sample   : integer index of force onset — search starts here
-    file_path      : for diagnostic messages
-
-    Returns
-    -------
-    Interpolated time (s) of shortening onset.
-    Falls back to the time of the global length minimum if no crossing is found.
-    """
-    N = len(length_mm)
-    if onset_sample < 1:
-        onset_sample = 1
-
-    baseline_mean = float(np.mean(length_mm[:onset_sample]))
-    baseline_std  = float(np.std(length_mm[:onset_sample]))
-    # Floor the std so a near-zero noise level doesn't produce a hair-trigger
-    std_floor     = max(baseline_std, 0.001)
-    threshold     = baseline_mean - 6.0 * std_floor
-
-    smooth_k  = max(1, int(0.020 * sample_freq_hz))   # 20 ms
-    padded    = np.pad(length_mm, smooth_k // 2, mode='edge')
-    length_sm = np.convolve(padded, np.ones(smooth_k) / smooth_k, mode='valid')[:N]
-
-    for i in range(onset_sample, N - 1):
-        if length_sm[i] >= threshold and length_sm[i + 1] < threshold:
-            frac = (threshold - length_sm[i]) / (length_sm[i + 1] - length_sm[i])
-            t    = (i + frac) / sample_freq_hz
-            print(f"[_length_shortening_onset] {file_path}")
-            print(f"  length_baseline = {baseline_mean:.4f} mm  "
-                  f"threshold = {threshold:.4f} mm  (−6σ = −{6*std_floor:.4f})")
-            print(f"  shortening onset = {t:.6f} s  (sample {i})")
-            return float(t)
-
-    # Fallback: no crossing found — use global minimum after onset
-    fallback_idx = onset_sample + int(np.argmin(length_mm[onset_sample:]))
-    t_fallback   = fallback_idx / sample_freq_hz
-    print(f"[_length_shortening_onset] {file_path}: WARNING — no threshold crossing "
-          f"found; falling back to length minimum at {t_fallback:.4f} s")
-    return float(t_fallback)
 
 def _plateau_slope_flag(force_seg: np.ndarray, sample_freq_hz: float) -> bool:
     """
@@ -229,6 +218,9 @@ def _plateau_slope_flag(force_seg: np.ndarray, sample_freq_hz: float) -> bool:
     noise_std  = float(np.std(residuals))
     drift_snr  = drift / noise_std if noise_std > 0 else 0.0
     return bool(drift > 0 and drift_snr > 2.0)
+
+
+
 
 def _rough_onset_idx(signal: np.ndarray, sample_freq_hz: float,
                      bootstrap_s: float = 0.08, threshold_std: float = 6.0,
@@ -258,18 +250,13 @@ def _rough_onset_idx(signal: np.ndarray, sample_freq_hz: float,
     return 0
 
 
+# ---------------------------------------------------------------------------
+# DMC file parser
+# ---------------------------------------------------------------------------
 
 def parse_dmc_file(file_path: str) -> dict:
     """
     Parse a DMCv5.x-style data file and return detected integration limits.
-
-    Integration window
-    ------------------
-    START : last moment before the force rise where force = baseline
-            (from detect_limits_by_intersection on the force signal).
-    END   : first moment the length signal dips below its pre-contraction
-            baseline — i.e. when shortening begins and isometric work ends
-            (from _length_shortening_onset on the length signal).
 
     Returns
     -------
@@ -278,11 +265,12 @@ def parse_dmc_file(file_path: str) -> dict:
       'length_mm'      : muscle length (mm)
       'force_mN'       : force (mN)
       'raw_df'         : full pandas DataFrame
-      'start_time'     : interpolated start time (s) — (force − baseline) = 0
-      'end_time'       : interpolated end time (s) — shortening onset
+      'start_time'     : interpolated start time (s) — (force - baseline) = 0
+      'end_time'       : interpolated end time (s) — force reaches plateau_mean
       'baseline_mean'  : pre-contraction force baseline (mN)
-      'slope_flag'     : True if the isometric plateau showed significant upward
-                         drift (annotation only; does not affect end_time)
+      'plateau_mean'   : plateau force (mN)
+      'slope_flag'     : True if the plateau had significant upward drift
+                         (rising plateau; peak was used as end-point target)
       'end_plateau'    : index of minimum length (contraction window limit)
     """
     with open(file_path, "r", encoding="latin-1") as f:
@@ -359,25 +347,11 @@ def parse_dmc_file(file_path: str) -> dict:
     rough_idx     = _rough_onset_idx(force_mN, sample_freq_hz)
     end_idx_force = int(rough_idx + np.argmin(length_mm[rough_idx:]))
 
-    # ── START: from force signal ────────────────────────────────────────── #
-    start_time, baseline_mean = detect_limits_by_intersection(
-        force_mN[:end_idx_force], sample_freq_hz, file_path=file_path
-    )
-
-    # ── END: from length signal ─────────────────────────────────────────── #
-    # End of isometric work = start of shortening = first moment length
-    # drops below its pre-contraction baseline.
-    onset_sample = max(1, int(round(start_time * sample_freq_hz)))
-    end_time     = _length_shortening_onset(
-        length_mm, sample_freq_hz, onset_sample, file_path=file_path
-    )
-
-    # ── SLOPE FLAG: annotate the force plateau shape ─────────────────────── #
-    # Extract the force segment between start and end, compute plateau flag.
-    # This is annotation only — end_time is already set from length above.
-    end_sample  = min(int(round(end_time * sample_freq_hz)), len(force_mN) - 1)
-    force_plateau_seg = force_mN[end_sample:]   # force after shortening onset
-    slope_flag  = _plateau_slope_flag(force_plateau_seg, sample_freq_hz)
+    # Precise limits via intersection sweep (operates on the contraction window)
+    start_time, baseline_mean, end_time, plateau_mean, slope_flag = \
+        detect_limits_by_intersection(
+            force_mN[:end_idx_force], sample_freq_hz, file_path=file_path
+        )
 
     return {
         "time":          time_s,
@@ -387,31 +361,25 @@ def parse_dmc_file(file_path: str) -> dict:
         "start_time":    start_time,
         "end_time":      end_time,
         "baseline_mean": baseline_mean,
+        "plateau_mean":  plateau_mean,
         "slope_flag":    slope_flag,
         "end_plateau":   end_idx_force,
     }
+
+
+# ---------------------------------------------------------------------------
+# Integration
+# ---------------------------------------------------------------------------
 
 def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
     """
     Compute the isometric work (force-time integral) for a single file.
 
-    Integration window
-    ------------------
-    [start_time, end_time] where:
-      start_time : last moment before the rise where force = baseline
-                   (baseline-corrected integrand = 0 here by construction)
-      end_time   : first moment the length signal drops below its baseline
-                   (shortening onset; end of isometric phase)
-
-    The integrand is force − baseline_mean.  The exact boundary values are
-    interpolated so the trapezoidal integral captures fractional samples.
-
     Returns
     -------
     (work_mN_s, slope_flag)
       work_mN_s  : force-time integral (mN · s), baseline corrected
-      slope_flag : True if the isometric force plateau showed significant
-                   upward drift (annotation for CSV; does not affect the area)
+      slope_flag : True if the plateau was rising (peak used as end target)
     """
     parsed        = parse_dmc_file(file_path)
     time          = parsed["time"]
@@ -419,6 +387,7 @@ def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
     start_time    = parsed["start_time"]
     end_time      = parsed["end_time"]
     baseline_mean = parsed["baseline_mean"]
+    plateau_mean  = parsed["plateau_mean"]
     slope_flag    = parsed["slope_flag"]
 
     # Integer samples strictly inside (start_time, end_time)
@@ -429,20 +398,17 @@ def isometric_work_from_file(file_path: str) -> Tuple[float, bool]:
     time_seg  = time[start_sample : end_sample + 1]
     force_seg = force_mN[start_sample : end_sample + 1] - baseline_mean
 
-    # Interpolate the force value at end_time for the closing boundary point
-    if end_sample < len(time) - 1:
-        t0, t1   = time[end_sample], time[end_sample + 1]
-        f0, f1   = force_mN[end_sample] - baseline_mean, force_mN[end_sample + 1] - baseline_mean
-        frac     = (end_time - t0) / (t1 - t0) if t1 > t0 else 0.0
-        force_at_end = f0 + frac * (f1 - f0)
-    else:
-        force_at_end = float(force_mN[end_sample] - baseline_mean)
-
-    # Prepend exact start (integrand = 0) and append interpolated end value
+    # Prepend exact start (integrand = 0) and append exact end
     time_int  = np.concatenate([[start_time],  time_seg,  [end_time]])
-    force_int = np.concatenate([[0.0],         force_seg, [force_at_end]])
+    force_int = np.concatenate([[0.0],         force_seg,
+                                 [plateau_mean - baseline_mean]])
 
     return float(np.trapezoid(force_int, time_int)), bool(slope_flag)
+
+
+# ---------------------------------------------------------------------------
+# Per-folder processing
+# ---------------------------------------------------------------------------
 
 def run_isometric_work(folder_path: str, csa_mm2: float) -> List[Tuple[float, bool]]:
     """
@@ -467,87 +433,63 @@ def run_isometric_work(folder_path: str, csa_mm2: float) -> List[Tuple[float, bo
 
     return animal_results
 
+
+# ---------------------------------------------------------------------------
+# Validation figure
+# ---------------------------------------------------------------------------
+
 def val_isometric_work(file_path: str, i: int):
     """
-    Produce a validation figure for a single file showing both force and length.
+    Produce a force validation figure for a single file.
 
-    Force panel:
-      Green dot  : (start_time, baseline_mean) — integration start; force = baseline
-      Brown dot  : (end_time, force at end_time) — shortening onset; end of isometric phase
-      Blue shade : integrated region
-
-    Length panel:
-      Orange dot : (end_time, length_baseline) — the crossing point that defines end_time
+    Green dot  : (start_time, baseline_mean) — integration start; force = baseline
+    Brown dot  : (end_time, plateau_mean)    — integration end; force = plateau
+    Blue shade : integrated region
     """
     parsed        = parse_dmc_file(file_path)
     time          = parsed["time"]
     force_mN      = parsed["force_mN"]
-    length_mm     = parsed["length_mm"]
     start_time    = parsed["start_time"]
     end_time      = parsed["end_time"]
     baseline_mean = parsed["baseline_mean"]
+    plateau_mean  = parsed["plateau_mean"]
     end_plateau   = parsed["end_plateau"]
 
-    # Interpolate force at end_time for the closing boundary
     start_sample = int(np.searchsorted(time, start_time, side='right'))
     end_sample   = int(np.searchsorted(time, end_time,   side='left')) - 1
     end_sample   = max(start_sample, min(end_sample, len(time) - 1))
-
-    if end_sample < len(time) - 1:
-        t0, t1 = time[end_sample], time[end_sample + 1]
-        f0, f1 = force_mN[end_sample], force_mN[end_sample + 1]
-        frac   = (end_time - t0) / (t1 - t0) if t1 > t0 else 0.0
-        force_at_end = f0 + frac * (f1 - f0)
-    else:
-        force_at_end = float(force_mN[end_sample])
-
-    # Length baseline (pre-onset mean)
-    onset_sample    = max(1, int(round(start_time * (len(time) / time[-1]))))
-    length_baseline = float(np.mean(length_mm[:onset_sample]))
 
     time_shade  = np.concatenate([[start_time],
                                    time[start_sample : end_sample + 1],
                                    [end_time]])
     force_shade = np.concatenate([[baseline_mean],
                                    force_mN[start_sample : end_sample + 1],
-                                   [force_at_end]])
+                                   [plateau_mean]])
 
     short_path = "/".join(PlPath(file_path).parts[-3:])
-    window = slice(0, end_plateau + 1)
 
-    fig_l, (ax_f, ax_l) = plt.subplots(2, 1, figsize=(11, 10), sharex=True)
-    fig_l.suptitle(f"{short_path} (index {i})")
-
-    # ── Force panel ─────────────────────────────────────────────────────── #
-    ax_f.plot(time[window], force_mN[window])
-    ax_f.fill_between(time_shade, force_shade, baseline_mean,
+    fig_l, ax_l = plt.subplots(figsize=(11, 8))
+    ax_l.plot(time[:end_plateau + 1], force_mN[:end_plateau + 1])
+    ax_l.fill_between(time_shade, force_shade, baseline_mean,
                       alpha=0.3, label="Integrated Region")
-    ax_f.plot(start_time, baseline_mean,
+    ax_l.plot(start_time, baseline_mean,
               'o', color='green', markersize=8,
-              label=f"Start  (force = {baseline_mean:.2f} mN)")
-    ax_f.plot(end_time, force_at_end,
+              label=f"Start  (baseline = {baseline_mean:.2f} mN)")
+    ax_l.plot(end_time, plateau_mean,
               'o', color='brown', markersize=8,
-              label=f"End  (shortening onset, force = {force_at_end:.2f} mN)")
-    ax_f.set_ylabel("Force (mN)")
-    ax_f.legend(fontsize=8)
-    ax_f.grid(True)
-
-    # ── Length panel ─────────────────────────────────────────────────────── #
-    ax_l.plot(time[window], length_mm[window])
-    ax_l.axhline(length_baseline, color='grey', linestyle='--', linewidth=0.8,
-                 label=f"Length baseline ({length_baseline:.3f} mm)")
-    ax_l.plot(end_time, length_baseline,
-              'o', color='orange', markersize=8,
-              label=f"Shortening onset ({end_time:.4f} s)")
+              label=f"End  (plateau = {plateau_mean:.2f} mN)")
     ax_l.set_xlabel("Time (s)")
-    ax_l.set_ylabel("Length (mm)")
-    ax_l.legend(fontsize=8)
+    ax_l.set_ylabel("Force (mN)")
+    ax_l.set_title(f"{short_path} (index {i})")
+    ax_l.legend()
     ax_l.grid(True)
 
-    fig_l.tight_layout()
     return fig_l
 
 
+# ---------------------------------------------------------------------------
+# Streamlit UI
+# ---------------------------------------------------------------------------
 
 st.title("Isometric Work Analysis")
 
