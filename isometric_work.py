@@ -642,7 +642,7 @@ if st.session_state.analysis_done:
 
     final_df  = pd.DataFrame(rows, columns=[
         "filename",
-        "isometric work (mN·s/mm^2)",
+        "isometric work (mN * s/mm^2)",
         "plateau drift",
     ])
     csv_bytes = final_df.to_csv(index=False).encode("utf-8")
