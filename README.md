@@ -1,8 +1,10 @@
 Poem
 
+
 To the Bugs That Would Not Die
 
 I coded a Streamlit app, everything just right,
+
 Hit “deploy,” and prepared for delight.
 But the page loaded with a sneer on its face,
 Bright red errors all over the place.
