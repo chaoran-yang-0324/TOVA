@@ -1,7 +1,4 @@
-Poem
-
-
-To the Bugs That Would Not Die
+Poem: To the Bugs That Would Not Die
 
 I coded a Streamlit app, everything just right,
 
