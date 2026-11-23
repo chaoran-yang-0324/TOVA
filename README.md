@@ -1,5 +1,3 @@
-Tranducer Output Visual Analysis (TOVA) 
-
 Inputs: 
 
 - .ddf files of muscle contractions over time
